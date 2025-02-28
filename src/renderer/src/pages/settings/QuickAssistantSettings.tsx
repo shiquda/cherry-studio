@@ -2,12 +2,8 @@ import { CaretRightOutlined, DeleteOutlined, EditOutlined, InfoCircleOutlined, P
 import { useTheme } from '@renderer/context/ThemeProvider'
 import { useSettings } from '@renderer/hooks/useSettings'
 import { useAppDispatch } from '@renderer/store'
-import {
-  CustomPrompt,
-  setClickTrayToShowQuickAssistant,
-  setCustomPrompts,
-  setEnableQuickAssistant
-} from '@renderer/store/settings'
+import { setCustomPrompts } from '@renderer/store/prompts'
+import { setClickTrayToShowQuickAssistant, setEnableQuickAssistant } from '@renderer/store/settings'
 import HomeWindow from '@renderer/windows/mini/home/HomeWindow'
 import { Button, Form, Input, List, message, Modal, Switch, Tooltip } from 'antd'
 import { FC, useState } from 'react'

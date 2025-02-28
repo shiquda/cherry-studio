@@ -301,3 +301,9 @@ export type KnowledgeReference = {
   type: KnowledgeItemType
   file?: FileType
 }
+
+export type CustomPrompt = {
+  id: string
+  name: string
+  prompt: string
+}
