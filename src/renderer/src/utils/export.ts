@@ -6,6 +6,7 @@ import store from '@renderer/store'
 import { setExportState } from '@renderer/store/runtime'
 import { Message, Topic } from '@renderer/types'
 import { removeSpecialCharactersForFileName } from '@renderer/utils/index'
+import { markdownToBlocks } from '@tryfabric/martian'
 import dayjs from 'dayjs'
 
 export const messageToMarkdown = (message: Message) => {
@@ -89,6 +90,9 @@ export const exportMessageAsMarkdown = async (message: Message) => {
   }
 }
 
+const convertMarkdownToNotionBlocks = async (markdown: string) => {
+  return markdownToBlocks(markdown)
+}
 // 修改 splitNotionBlocks 函数
 const splitNotionBlocks = (blocks: any[]) => {
   const { notionAutoSplit, notionSplitSize } = store.getState().settings
@@ -135,18 +139,7 @@ export const exportTopicToNotion = async (topic: Topic) => {
   try {
     const notion = new Client({ auth: notionApiKey })
     const markdown = await topicToMarkdown(topic)
-    const requestBody = JSON.stringify({ md: markdown })
-
-    const res = await fetch('https://md2notion.hilars.dev', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: requestBody
-    })
-
-    const data = await res.json()
-    const allBlocks = data
+    const allBlocks = await convertMarkdownToNotionBlocks(markdown)
     const blockPages = splitNotionBlocks(allBlocks)
 
     if (blockPages.length === 0) {
@@ -214,18 +207,11 @@ export const exportMarkdownToNotion = async (title: string, content: string) => 
 
   try {
     const notion = new Client({ auth: notionApiKey })
-    const requestBody = JSON.stringify({ md: content })
+    const notionBlocks = await convertMarkdownToNotionBlocks(content)
 
-    const res = await fetch('https://md2notion.hilars.dev', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: requestBody
-    })
-
-    const data = await res.json()
-    const notionBlocks = data
+    if (notionBlocks.length === 0) {
+      throw new Error('No content to export')
+    }
 
     const response = await notion.pages.create({
       parent: { database_id: notionDatabaseID },
@@ -234,7 +220,7 @@ export const exportMarkdownToNotion = async (title: string, content: string) => 
           title: [{ text: { content: title } }]
         }
       },
-      children: notionBlocks
+      children: notionBlocks as any[]
     })
 
     window.message.success({ content: i18n.t('message.success.notion.export'), key: 'notion-success' })
