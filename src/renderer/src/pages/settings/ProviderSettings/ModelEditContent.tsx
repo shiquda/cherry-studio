@@ -2,7 +2,7 @@ import { DownOutlined, UpOutlined } from '@ant-design/icons'
 import { isEmbeddingModel, isReasoningModel, isVisionModel } from '@renderer/config/models'
 import { Model, ModelType } from '@renderer/types'
 import { getDefaultGroupName } from '@renderer/utils'
-import { Button, Checkbox, Divider, Flex, Form, Input, Modal } from 'antd'
+import { Button, Checkbox, Divider, Flex, Form, Input, InputNumber, Modal, Select } from 'antd'
 import { FC, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -17,22 +17,38 @@ interface ModelEditContentProps {
 const ModelEditContent: FC<ModelEditContentProps> = ({ model, onUpdateModel, open, onClose }) => {
   const [form] = Form.useForm()
   const { t } = useTranslation()
-  const [showModelTypes, setShowModelTypes] = useState(false)
+  const [showMoreSettings, setShowMoreSettings] = useState(false)
+  const [currencySymbol, setCurrencySymbol] = useState(model.pricing?.currencySymbol || '$')
+
   const onFinish = (values: any) => {
     const updatedModel = {
       ...model,
       id: values.id || model.id,
       name: values.name || model.name,
-      group: values.group || model.group
+      group: values.group || model.group,
+      pricing: {
+        input_per_million_tokens: Number(values.input_per_million_tokens) || 0,
+        output_per_million_tokens: Number(values.output_per_million_tokens) || 0,
+        currencySymbol: values.currencySymbol || '$'
+      }
     }
     onUpdateModel(updatedModel)
-    setShowModelTypes(false)
+    setShowMoreSettings(false)
     onClose()
   }
+
   const handleClose = () => {
-    setShowModelTypes(false)
+    setShowMoreSettings(false)
     onClose()
   }
+
+  const currencyOptions = [
+    { label: '$', value: '$' },
+    { label: '¥', value: '¥' },
+    { label: '€', value: '€' },
+    { label: '£', value: '£' }
+  ]
+
   return (
     <Modal
       title={t('models.edit')}
@@ -45,7 +61,7 @@ const ModelEditContent: FC<ModelEditContentProps> = ({ model, onUpdateModel, ope
         if (visible) {
           form.getFieldInstance('id')?.focus()
         } else {
-          setShowModelTypes(false)
+          setShowMoreSettings(false)
         }
       }}>
       <Form
@@ -57,7 +73,10 @@ const ModelEditContent: FC<ModelEditContentProps> = ({ model, onUpdateModel, ope
         initialValues={{
           id: model.id,
           name: model.name,
-          group: model.group
+          group: model.group,
+          input_per_million_tokens: model.pricing?.input_per_million_tokens ?? 0,
+          output_per_million_tokens: model.pricing?.output_per_million_tokens ?? 0,
+          currencySymbol: model.pricing?.currencySymbol || '$'
         }}
         onFinish={onFinish}>
         <Form.Item
@@ -97,14 +116,14 @@ const ModelEditContent: FC<ModelEditContentProps> = ({ model, onUpdateModel, ope
               </Button>
             </div>
             <MoreSettingsRow
-              onClick={() => setShowModelTypes(!showModelTypes)}
+              onClick={() => setShowMoreSettings(!showMoreSettings)}
               style={{ position: 'absolute', right: 0 }}>
               {t('settings.moresetting')}
-              <ExpandIcon>{showModelTypes ? <UpOutlined /> : <DownOutlined />}</ExpandIcon>
+              <ExpandIcon>{showMoreSettings ? <UpOutlined /> : <DownOutlined />}</ExpandIcon>
             </MoreSettingsRow>
           </Flex>
         </Form.Item>
-        {showModelTypes && (
+        {showMoreSettings && (
           <div>
             <Divider style={{ margin: '0 0 15px 0' }} />
             <TypeTitle>{t('models.type.select')}:</TypeTitle>
@@ -166,6 +185,35 @@ const ModelEditContent: FC<ModelEditContentProps> = ({ model, onUpdateModel, ope
                 />
               )
             })()}
+            <TypeTitle>{t('models.price.price')}</TypeTitle>
+            <Form.Item name="currencySymbol" label={t('models.price.currency')} style={{ marginBottom: 10 }}>
+              <Select
+                style={{ width: '100px' }}
+                options={currencyOptions}
+                onChange={(value) => setCurrencySymbol(value)}
+                dropdownMatchSelectWidth={false}
+              />
+            </Form.Item>
+            <Form.Item label={t('models.price.input')} name="input_per_million_tokens">
+              <InputNumber
+                placeholder="0.00"
+                min={0}
+                step={0.01}
+                precision={2}
+                style={{ width: '180px' }}
+                addonAfter={`${currencySymbol} / ${t('models.price.million_tokens')}`}
+              />
+            </Form.Item>
+            <Form.Item label={t('models.price.output')} name="output_per_million_tokens">
+              <InputNumber
+                placeholder="0.00"
+                min={0}
+                step={0.01}
+                precision={2}
+                style={{ width: '180px' }}
+                addonAfter={`${currencySymbol} / ${t('models.price.million_tokens')}`}
+              />
+            </Form.Item>
           </div>
         )}
       </Form>

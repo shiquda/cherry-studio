@@ -470,6 +470,14 @@
         "string": "Text"
       },
       "pinned": "Pinned",
+      "price": {
+        "currency": "Currency",
+        "price": "Price",
+        "input": "Input Price",
+        "output": "Output Price",
+        "million_tokens": "M Tokens",
+        "cost": "Cost"
+      },
       "reasoning": "Reasoning",
       "search": "Search models...",
       "stream_output": "Stream output",

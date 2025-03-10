@@ -469,6 +469,14 @@
         "string": "文本"
       },
       "pinned": "已固定",
+      "price": {
+        "currency": "币种",
+        "price": "价格",
+        "input": "输入价格",
+        "output": "输出价格",
+        "million_tokens": "百万 Token",
+        "cost": "花费"
+      },
       "reasoning": "推理",
       "search": "搜索模型...",
       "stream_output": "流式输出",
