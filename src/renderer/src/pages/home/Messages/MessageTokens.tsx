@@ -31,7 +31,7 @@ const MessgeTokens: React.FC<{ message: Message; isLastMessage: boolean }> = ({ 
       return ''
     }
     const currencySymbol = message.model?.pricing?.currencySymbol || '$'
-    return `| ${t('models.price.cost')}: ${price}${currencySymbol}`
+    return `| ${t('models.price.cost')}: ${currencySymbol}${price}`
   }
 
   if (!message.usage) {
