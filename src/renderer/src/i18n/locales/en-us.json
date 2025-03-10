@@ -471,12 +471,15 @@
       },
       "pinned": "Pinned",
       "price": {
+        "cost": "Cost",
         "currency": "Currency",
-        "price": "Price",
+        "custom": "Custom",
+        "custom_currency": "Custom Currency",
+        "custom_currency_placeholder": "Enter Custom Currency",
         "input": "Input Price",
-        "output": "Output Price",
         "million_tokens": "M Tokens",
-        "cost": "Cost"
+        "output": "Output Price",
+        "price": "Price"
       },
       "reasoning": "Reasoning",
       "search": "Search models...",

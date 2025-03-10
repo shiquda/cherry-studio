@@ -14,13 +14,16 @@ interface ModelEditContentProps {
   onClose: () => void
 }
 
+const symbols = ['$', '¥', '€', '£']
 const ModelEditContent: FC<ModelEditContentProps> = ({ model, onUpdateModel, open, onClose }) => {
   const [form] = Form.useForm()
   const { t } = useTranslation()
   const [showMoreSettings, setShowMoreSettings] = useState(false)
   const [currencySymbol, setCurrencySymbol] = useState(model.pricing?.currencySymbol || '$')
+  const [isCustomCurrency, setIsCustomCurrency] = useState(!symbols.includes(model.pricing?.currencySymbol || '$'))
 
   const onFinish = (values: any) => {
+    const finalCurrencySymbol = isCustomCurrency ? values.customCurrencySymbol : values.currencySymbol
     const updatedModel = {
       ...model,
       id: values.id || model.id,
@@ -29,7 +32,7 @@ const ModelEditContent: FC<ModelEditContentProps> = ({ model, onUpdateModel, ope
       pricing: {
         input_per_million_tokens: Number(values.input_per_million_tokens) || 0,
         output_per_million_tokens: Number(values.output_per_million_tokens) || 0,
-        currencySymbol: values.currencySymbol || '$'
+        currencySymbol: finalCurrencySymbol || '$'
       }
     }
     onUpdateModel(updatedModel)
@@ -43,10 +46,8 @@ const ModelEditContent: FC<ModelEditContentProps> = ({ model, onUpdateModel, ope
   }
 
   const currencyOptions = [
-    { label: '$', value: '$' },
-    { label: '¥', value: '¥' },
-    { label: '€', value: '€' },
-    { label: '£', value: '£' }
+    ...symbols.map((symbol) => ({ label: symbol, value: symbol })),
+    { label: t('models.price.custom'), value: 'custom' }
   ]
 
   return (
@@ -76,7 +77,12 @@ const ModelEditContent: FC<ModelEditContentProps> = ({ model, onUpdateModel, ope
           group: model.group,
           input_per_million_tokens: model.pricing?.input_per_million_tokens ?? 0,
           output_per_million_tokens: model.pricing?.output_per_million_tokens ?? 0,
-          currencySymbol: model.pricing?.currencySymbol || '$'
+          currencySymbol: symbols.includes(model.pricing?.currencySymbol || '$')
+            ? model.pricing?.currencySymbol || '$'
+            : 'custom',
+          customCurrencySymbol: symbols.includes(model.pricing?.currencySymbol || '$')
+            ? ''
+            : model.pricing?.currencySymbol || ''
         }}
         onFinish={onFinish}>
         <Form.Item
@@ -190,17 +196,41 @@ const ModelEditContent: FC<ModelEditContentProps> = ({ model, onUpdateModel, ope
               <Select
                 style={{ width: '100px' }}
                 options={currencyOptions}
-                onChange={(value) => setCurrencySymbol(value)}
+                onChange={(value) => {
+                  if (value === 'custom') {
+                    setIsCustomCurrency(true)
+                    setCurrencySymbol(form.getFieldValue('customCurrencySymbol') || '')
+                  } else {
+                    setIsCustomCurrency(false)
+                    setCurrencySymbol(value)
+                  }
+                }}
                 dropdownMatchSelectWidth={false}
               />
             </Form.Item>
+
+            {isCustomCurrency && (
+              <Form.Item
+                name="customCurrencySymbol"
+                label={t('models.price.custom_currency')}
+                style={{ marginBottom: 10 }}
+                rules={[{ required: isCustomCurrency }]}>
+                <Input
+                  style={{ width: '100px' }}
+                  placeholder={t('models.price.custom_currency_placeholder')}
+                  maxLength={5}
+                  onChange={(e) => setCurrencySymbol(e.target.value)}
+                />
+              </Form.Item>
+            )}
+
             <Form.Item label={t('models.price.input')} name="input_per_million_tokens">
               <InputNumber
                 placeholder="0.00"
                 min={0}
                 step={0.01}
                 precision={2}
-                style={{ width: '180px' }}
+                style={{ width: '240px' }}
                 addonAfter={`${currencySymbol} / ${t('models.price.million_tokens')}`}
               />
             </Form.Item>
@@ -210,7 +240,7 @@ const ModelEditContent: FC<ModelEditContentProps> = ({ model, onUpdateModel, ope
                 min={0}
                 step={0.01}
                 precision={2}
-                style={{ width: '180px' }}
+                style={{ width: '240px' }}
                 addonAfter={`${currencySymbol} / ${t('models.price.million_tokens')}`}
               />
             </Form.Item>
