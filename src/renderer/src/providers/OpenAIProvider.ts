@@ -398,9 +398,14 @@ export default class OpenAIProvider extends BaseProvider {
 
             console.log('[OpenAIProvider] toolCallResponse', toolCallResponse)
 
+            const MCPToolContent =
+              typeof toolCallResponse.content === 'string'
+                ? toolCallResponse.content
+                : JSON.stringify(toolCallResponse.content)
+
             reqMessages.push({
               role: 'tool',
-              content: toolCallResponse.content,
+              content: MCPToolContent,
               tool_call_id: toolCall.id
             } as ChatCompletionToolMessageParam)
 
