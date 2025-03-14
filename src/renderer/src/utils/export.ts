@@ -153,6 +153,15 @@ export const exportTopicToNotion = async (topic: Topic) => {
       const pageTitle = topic.name
       const pageBlocks = blockPages[i]
 
+      // 导出进度提示
+      window.message.loading({
+        content: i18n.t('message.loading.notion.exporting_progress', {
+          current: i + 1,
+          total: blockPages.length
+        }),
+        key: 'notion-export-progress'
+      })
+
       if (i === 0) {
         const response = await notion.pages.create({
           parent: { database_id: notionDatabaseID },
@@ -176,10 +185,10 @@ export const exportTopicToNotion = async (topic: Topic) => {
       }
     }
 
-    window.message.success({ content: i18n.t('message.success.notion.export'), key: 'notion-success' })
+    window.message.success({ content: i18n.t('message.success.notion.export'), key: 'notion-export-progress' })
     return mainPageResponse
   } catch (error: any) {
-    window.message.error({ content: i18n.t('message.error.notion.export'), key: 'notion-error' })
+    window.message.error({ content: i18n.t('message.error.notion.export'), key: 'notion-export-progress' })
     return null
   } finally {
     setExportState({
