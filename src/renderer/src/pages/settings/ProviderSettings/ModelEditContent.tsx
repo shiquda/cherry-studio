@@ -9,7 +9,7 @@ import {
 } from '@renderer/config/models'
 import { Model, ModelType } from '@renderer/types'
 import { getDefaultGroupName } from '@renderer/utils'
-import { Button, Checkbox, Divider, Flex, Form, Input, InputNumber, Modal, Select } from 'antd'
+import { Button, Checkbox, Divider, Flex, Form, Input, InputNumber, message, Modal, Select } from 'antd'
 import { FC, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
