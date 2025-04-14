@@ -9,7 +9,7 @@ const ToolsCallingIcon: FC<React.DetailedHTMLProps<React.HTMLAttributes<HTMLElem
 
   return (
     <Container>
-      <Tooltip title={t('models.tool_calling')} placement="top">
+      <Tooltip title={t('models.function_calling')} placement="top">
         <Icon {...(props as any)} />
       </Tooltip>
     </Container>
@@ -23,7 +23,7 @@ const Container = styled.div`
 `
 
 const Icon = styled(ToolOutlined)`
-  color: #d97757;
+  color: var(--color-primary);
   font-size: 15px;
   margin-right: 6px;
 `

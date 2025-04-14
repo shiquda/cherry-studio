@@ -1,42 +1,35 @@
-import { useAppDispatch, useAppSelector } from '@renderer/store'
-import {
-  addMCPServer as _addMCPServer,
-  deleteMCPServer as _deleteMCPServer,
-  setMCPServerActive as _setMCPServerActive,
-  updateMCPServer as _updateMCPServer
-} from '@renderer/store/mcp'
+import store, { useAppDispatch, useAppSelector } from '@renderer/store'
+import { addMCPServer, deleteMCPServer, setMCPServers, updateMCPServer } from '@renderer/store/mcp'
 import { MCPServer } from '@renderer/types'
+import { IpcChannel } from '@shared/IpcChannel'
+
+const ipcRenderer = window.electron.ipcRenderer
+
+// Listen for server changes from main process
+ipcRenderer.on(IpcChannel.Mcp_ServersChanged, (_event, servers) => {
+  store.dispatch(setMCPServers(servers))
+})
 
 export const useMCPServers = () => {
   const mcpServers = useAppSelector((state) => state.mcp.servers)
+  const activedMcpServers = mcpServers.filter((server) => server.isActive)
   const dispatch = useAppDispatch()
-
-  const addMCPServer = (server: MCPServer) => {
-    dispatch(_addMCPServer(server))
-  }
-
-  const updateMCPServer = (server: MCPServer) => {
-    dispatch(_updateMCPServer(server))
-  }
-
-  const deleteMCPServer = (name: string) => {
-    dispatch(_deleteMCPServer(name))
-  }
-
-  const setMCPServerActive = (name: string, isActive: boolean) => {
-    dispatch(_setMCPServerActive({ name, isActive }))
-  }
-
-  const getActiveMCPServers = () => {
-    return mcpServers.filter((server) => server.isActive)
-  }
 
   return {
     mcpServers,
-    addMCPServer,
-    updateMCPServer,
-    deleteMCPServer,
-    setMCPServerActive,
-    getActiveMCPServers
+    activedMcpServers,
+    addMCPServer: (server: MCPServer) => dispatch(addMCPServer(server)),
+    updateMCPServer: (server: MCPServer) => dispatch(updateMCPServer(server)),
+    deleteMCPServer: (id: string) => dispatch(deleteMCPServer(id)),
+    setMCPServerActive: (server: MCPServer, isActive: boolean) => dispatch(updateMCPServer({ ...server, isActive })),
+    getActiveMCPServers: () => mcpServers.filter((server) => server.isActive),
+    updateMcpServers: (servers: MCPServer[]) => dispatch(setMCPServers(servers))
+  }
+}
+
+export const useMCPServer = (id: string) => {
+  const { mcpServers } = useMCPServers()
+  return {
+    server: mcpServers.find((server) => server.id === id)
   }
 }

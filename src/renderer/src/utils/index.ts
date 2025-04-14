@@ -1,5 +1,6 @@
 import i18n from '@renderer/i18n'
 import { Model } from '@renderer/types'
+import { KB, MB } from '@shared/config/constant'
 import { ModalFuncProps } from 'antd/es/modal/interface'
 import imageCompression from 'browser-image-compression'
 import * as htmlToImage from 'html-to-image'
@@ -177,7 +178,18 @@ export function removeQuotes(str) {
 
 export function removeSpecialCharacters(str: string) {
   // First remove newlines and quotes, then remove other special characters
-  return str.replace(/[\n"]/g, '').replace(/[\p{M}\p{N}\p{P}\p{S}]/gu, '')
+  return str.replace(/[\n"]/g, '').replace(/[\p{M}\p{P}]/gu, '')
+}
+
+export function removeSpecialCharactersForTopicName(str: string) {
+  return str.replace(/[\r\n]+/g, ' ').trim()
+}
+
+export function removeSpecialCharactersForFileName(str: string) {
+  return str
+    .replace(/[<>:"/\\|?*.]/g, '_')
+    .replace(/[\r\n]+/g, ' ')
+    .trim()
 }
 
 export function generateColorFromChar(char: string) {
@@ -235,8 +247,12 @@ export function loadScript(url: string) {
 }
 
 export function convertMathFormula(input) {
-  // 使用正则表达式匹配并替换公式格式
-  return input.replaceAll(/\\\[/g, '$$$$').replaceAll(/\\\]/g, '$$$$')
+  if (!input) return input
+
+  let result = input
+  result = result.replaceAll('\\[', '$$$$').replaceAll('\\]', '$$$$')
+  result = result.replaceAll('\\(', '$$').replaceAll('\\)', '$$')
+  return result
 }
 
 export function getBriefInfo(text: string, maxLength: number = 50): string {
@@ -291,7 +307,7 @@ export async function captureDiv(divRef: React.RefObject<HTMLDivElement>) {
   return Promise.resolve(undefined)
 }
 
-export const captureScrollableDiv = async (divRef: React.RefObject<HTMLDivElement>) => {
+export const captureScrollableDiv = async (divRef: React.RefObject<HTMLDivElement | null>) => {
   if (divRef.current) {
     try {
       const div = divRef.current
@@ -377,7 +393,7 @@ export const captureScrollableDiv = async (divRef: React.RefObject<HTMLDivElemen
   return Promise.resolve(undefined)
 }
 
-export const captureScrollableDivAsDataURL = async (divRef: React.RefObject<HTMLDivElement>) => {
+export const captureScrollableDivAsDataURL = async (divRef: React.RefObject<HTMLDivElement | null>) => {
   return captureScrollableDiv(divRef).then((canvas) => {
     if (canvas) {
       return canvas.toDataURL('image/png')
@@ -386,7 +402,10 @@ export const captureScrollableDivAsDataURL = async (divRef: React.RefObject<HTML
   })
 }
 
-export const captureScrollableDivAsBlob = async (divRef: React.RefObject<HTMLDivElement>, func: BlobCallback) => {
+export const captureScrollableDivAsBlob = async (
+  divRef: React.RefObject<HTMLDivElement | null>,
+  func: BlobCallback
+) => {
   await captureScrollableDiv(divRef).then((canvas) => {
     canvas?.toBlob(func, 'image/png')
   })
@@ -403,15 +422,15 @@ export function hasPath(url: string): boolean {
 }
 
 export function formatFileSize(size: number) {
-  if (size > 1024 * 1024) {
-    return (size / 1024 / 1024).toFixed(1) + ' MB'
+  if (size > MB) {
+    return (size / MB).toFixed(1) + ' MB'
   }
 
-  if (size > 1024) {
-    return (size / 1024).toFixed(0) + ' KB'
+  if (size > KB) {
+    return (size / KB).toFixed(0) + ' KB'
   }
 
-  return (size / 1024).toFixed(2) + ' KB'
+  return (size / KB).toFixed(2) + ' KB'
 }
 
 export function sortByEnglishFirst(a: string, b: string) {

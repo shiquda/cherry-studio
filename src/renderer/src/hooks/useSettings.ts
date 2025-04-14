@@ -1,14 +1,18 @@
 import store, { useAppDispatch, useAppSelector } from '@renderer/store'
 import {
+  AssistantIconType,
   SendMessageShortcut,
+  setAssistantIconType,
+  setLaunchOnBoot,
+  setLaunchToTray,
   setSendMessageShortcut as _setSendMessageShortcut,
-  setShowAssistantIcon,
   setSidebarIcons,
   setTargetLanguage,
   setTheme,
   SettingsState,
   setTopicPosition,
-  setTray,
+  setTray as _setTray,
+  setTrayOnClose,
   setWindowStyle
 } from '@renderer/store/settings'
 import { SidebarIcon, ThemeMode, TranslateLanguageVarious } from '@renderer/types'
@@ -22,10 +26,30 @@ export function useSettings() {
     setSendMessageShortcut(shortcut: SendMessageShortcut) {
       dispatch(_setSendMessageShortcut(shortcut))
     },
-    setTray(isActive: boolean) {
-      dispatch(setTray(isActive))
-      window.api.setTray(isActive)
+
+    setLaunch(isLaunchOnBoot: boolean | undefined, isLaunchToTray: boolean | undefined = undefined) {
+      if (isLaunchOnBoot !== undefined) {
+        dispatch(setLaunchOnBoot(isLaunchOnBoot))
+        window.api.setLaunchOnBoot(isLaunchOnBoot)
+      }
+
+      if (isLaunchToTray !== undefined) {
+        dispatch(setLaunchToTray(isLaunchToTray))
+        window.api.setLaunchToTray(isLaunchToTray)
+      }
     },
+
+    setTray(isShowTray: boolean | undefined, isTrayOnClose: boolean | undefined = undefined) {
+      if (isShowTray !== undefined) {
+        dispatch(_setTray(isShowTray))
+        window.api.setTray(isShowTray)
+      }
+      if (isTrayOnClose !== undefined) {
+        dispatch(setTrayOnClose(isTrayOnClose))
+        window.api.setTrayOnClose(isTrayOnClose)
+      }
+    },
+
     setTheme(theme: ThemeMode) {
       dispatch(setTheme(theme))
     },
@@ -47,8 +71,8 @@ export function useSettings() {
     updateSidebarDisabledIcons(icons: SidebarIcon[]) {
       dispatch(setSidebarIcons({ disabled: icons }))
     },
-    setShowAssistantIcon(showAssistantIcon: boolean) {
-      dispatch(setShowAssistantIcon(showAssistantIcon))
+    setAssistantIconType(assistantIconType: AssistantIconType) {
+      dispatch(setAssistantIconType(assistantIconType))
     }
   }
 }

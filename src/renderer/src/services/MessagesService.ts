@@ -2,14 +2,16 @@ import SearchPopup from '@renderer/components/Popups/SearchPopup'
 import { DEFAULT_CONTEXTCOUNT } from '@renderer/config/constant'
 import { getTopicById } from '@renderer/hooks/useTopic'
 import i18n from '@renderer/i18n'
+import { fetchMessagesSummary } from '@renderer/services/ApiService'
 import store from '@renderer/store'
 import { Assistant, Message, Model, Topic } from '@renderer/types'
 import { getTitleFromString, uuid } from '@renderer/utils'
 import dayjs from 'dayjs'
+import { t } from 'i18next'
 import { isEmpty, remove, takeRight } from 'lodash'
 import { NavigateFunction } from 'react-router'
 
-import { getAssistantById, getDefaultModel } from './AssistantService'
+import { getAssistantById, getAssistantProvider, getDefaultModel } from './AssistantService'
 import { EVENT_NAMES, EventEmitter } from './EventService'
 import FileManager from './FileManager'
 
@@ -39,8 +41,21 @@ export function filterUserRoleStartMessages(messages: Message[]): Message[] {
   return messages.slice(firstUserMessageIndex)
 }
 
+export function filterEmptyMessages(messages: Message[]): Message[] {
+  return messages.filter((message) => {
+    const content = message.content as string | any[]
+    if (typeof content === 'string' && isEmpty(message.files)) {
+      return !isEmpty(content.trim())
+    }
+    if (Array.isArray(content)) {
+      return content.some((c) => !isEmpty(c.text.trim()))
+    }
+    return true
+  })
+}
+
 export function filterUsefulMessages(messages: Message[]): Message[] {
-  const _messages = messages
+  let _messages = [...messages]
   const groupedMessages = getGroupedMessages(messages)
 
   Object.entries(groupedMessages).forEach(([key, messages]) => {
@@ -63,6 +78,14 @@ export function filterUsefulMessages(messages: Message[]): Message[] {
   while (_messages.length > 0 && _messages[_messages.length - 1].role === 'assistant') {
     _messages.pop()
   }
+
+  // 过滤两条及以上 user 类型消息相邻的情况，只保留最新一条 user 消息
+  _messages = _messages.filter((message, index, origin) => {
+    if (message.role === 'user' && index + 1 < origin.length && origin[index + 1].role === 'user') {
+      return false
+    }
+    return true
+  })
 
   return _messages
 }
@@ -161,6 +184,7 @@ export function getAssistantMessage({ assistant, topic }: { assistant: Assistant
 
 export function getGroupedMessages(messages: Message[]): { [key: string]: (Message & { index: number })[] } {
   const groups: { [key: string]: (Message & { index: number })[] } = {}
+
   messages.forEach((message, index) => {
     const key = message.askId ? 'assistant' + message.askId : 'user' + message.id
     if (key && !groups[key]) {
@@ -168,6 +192,7 @@ export function getGroupedMessages(messages: Message[]): { [key: string]: (Messa
     }
     groups[key].unshift({ ...message, index })
   })
+
   return groups
 }
 
@@ -190,7 +215,22 @@ export function resetAssistantMessage(message: Message, model?: Model): Message 
   }
 }
 
-export function getMessageTitle(message: Message, length = 30) {
+export async function getMessageTitle(message: Message, length = 30): Promise<string> {
+  // 检查 Redux 设置，若开启话题命名则调用 summaries 方法
+  if ((store.getState().settings as any).useTopicNamingForMessageTitle) {
+    try {
+      window.message.loading({ content: t('chat.topics.export.wait_for_title_naming'), key: 'message-title-naming' })
+      const title = await fetchMessagesSummary({ messages: [message], assistant: {} as Assistant })
+      if (title) {
+        window.message.success({ content: t('chat.topics.export.title_naming_success'), key: 'message-title-naming' })
+        return title
+      }
+    } catch (e) {
+      window.message.error({ content: t('chat.topics.export.title_naming_failed'), key: 'message-title-naming' })
+      console.error('Failed to generate title using topic naming, downgraded to default logic', e)
+    }
+  }
+
   let title = getTitleFromString(message.content, length)
 
   if (!title) {
@@ -198,4 +238,38 @@ export function getMessageTitle(message: Message, length = 30) {
   }
 
   return title
+}
+
+export function checkRateLimit(assistant: Assistant): boolean {
+  const provider = getAssistantProvider(assistant)
+
+  if (!provider.rateLimit) {
+    return false
+  }
+
+  const topicId = assistant.topics[0].id
+  const messages = store.getState().messages.messagesByTopic[topicId]
+
+  if (!messages || messages.length <= 1) {
+    return false
+  }
+
+  const now = Date.now()
+  const lastMessage = messages[messages.length - 1]
+  const lastMessageTime = new Date(lastMessage.createdAt).getTime()
+  const timeDiff = now - lastMessageTime
+  const rateLimitMs = provider.rateLimit * 1000
+
+  if (timeDiff < rateLimitMs) {
+    const waitTimeSeconds = Math.ceil((rateLimitMs - timeDiff) / 1000)
+
+    window.message.warning({
+      content: t('message.warning.rate.limit', { seconds: waitTimeSeconds }),
+      duration: 5,
+      key: 'rate-limit-message'
+    })
+    return true
+  }
+
+  return false
 }
