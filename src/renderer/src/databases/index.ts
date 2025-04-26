@@ -1,4 +1,4 @@
-import { FileType, KnowledgeItem, QuickPhrase, Topic, TranslateHistory } from '@renderer/types'
+import { DialogMap, FileType, KnowledgeItem, QuickPhrase, Topic, TranslateHistory } from '@renderer/types'
 import { Dexie, type EntityTable } from 'dexie'
 
 import { upgradeToV5 } from './upgrades'
@@ -11,6 +11,7 @@ export const db = new Dexie('CherryStudio') as Dexie & {
   knowledge_notes: EntityTable<KnowledgeItem, 'id'>
   translate_history: EntityTable<TranslateHistory, 'id'>
   quick_phrases: EntityTable<QuickPhrase, 'id'>
+  dialogMaps: EntityTable<DialogMap, 'id'>
 }
 
 db.version(1).stores({
@@ -55,6 +56,26 @@ db.version(6).stores({
   knowledge_notes: '&id, baseId, type, content, created_at, updated_at',
   translate_history: '&id, sourceText, targetText, sourceLanguage, targetLanguage, createdAt',
   quick_phrases: 'id'
+})
+
+db.version(7).stores({
+  files: 'id, name, origin_name, path, size, ext, type, created_at, count',
+  topics: '&id, messages',
+  settings: '&id, value',
+  knowledge_notes: '&id, baseId, type, content, created_at, updated_at',
+  translate_history: '&id, sourceText, targetText, sourceLanguage, targetLanguage, createdAt',
+  quick_phrases: 'id',
+  dialogMaps: '&id, topicId, rootNodeId, createdAt, updatedAt'
+})
+
+db.version(8).stores({
+  files: 'id, name, origin_name, path, size, ext, type, created_at, count',
+  topics: '&id, messages',
+  settings: '&id, value',
+  knowledge_notes: '&id, baseId, type, content, created_at, updated_at',
+  translate_history: '&id, sourceText, targetText, sourceLanguage, targetLanguage, createdAt',
+  quick_phrases: 'id',
+  dialogMaps: '&id, topicId, rootNodeId, createdAt, updatedAt'
 })
 
 export default db

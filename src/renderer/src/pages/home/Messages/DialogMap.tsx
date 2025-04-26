@@ -1,0 +1,856 @@
+import '@xyflow/react/dist/style.css'
+
+import { RobotOutlined, UserOutlined, PlusOutlined } from '@ant-design/icons'
+import ModelAvatar from '@renderer/components/Avatar/ModelAvatar'
+import { getModelLogo } from '@renderer/config/models'
+import { useTheme } from '@renderer/context/ThemeProvider'
+import DialogMapService from '@renderer/services/DialogMapService'
+import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
+import { useAppDispatch } from '@renderer/store'
+import { updateMessages } from '@renderer/store/messages'
+import type { DialogMap as DialogMapType, DialogMapNode as DialogMapNodeType, Topic } from '@renderer/types'
+import { Controls, Handle, MiniMap, ReactFlow, ReactFlowProvider } from '@xyflow/react'
+import { Edge, Node, NodeTypes, Position, useEdgesState, useNodesState } from '@xyflow/react'
+import { Avatar, Button, Empty, Spin, Tooltip } from 'antd'
+import { FC, memo, useCallback, useEffect, useState, useRef } from 'react'
+import { useTranslation } from 'react-i18next'
+import styled from 'styled-components'
+import db from '@renderer/databases'
+
+// 定义Tooltip相关样式组件
+const TooltipContent = styled.div`
+  max-width: 300px;
+`
+
+const TooltipTitle = styled.div`
+  font-weight: bold;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  padding-bottom: 4px;
+`
+
+const TooltipBody = styled.div`
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+`
+
+const TooltipFooter = styled.div`
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  font-style: italic;
+`
+
+// 自定义节点组件
+const DialogMapNode: FC<{ data: any }> = ({ data }) => {
+  const { t } = useTranslation()
+  const nodeType = data.type
+  let borderColor = '#d9d9d9' // 默认边框颜色
+  let title = ''
+  let backgroundColor = '#ffffff' // 默认背景色
+  let gradientColor = 'rgba(0, 0, 0, 0.03)' // 默认渐变色
+  let avatar: React.ReactNode | null = null
+  const isSelected = data.isSelected
+
+  // 根据消息类型设置不同的样式和图标
+  if (nodeType === 'user') {
+    borderColor = isSelected ? '#52c41a' : '#1890ff' // 用户节点颜色
+    backgroundColor = isSelected ? 'rgba(82, 196, 26, 0.1)' : 'rgba(24, 144, 255, 0.1)'
+    gradientColor = isSelected ? 'rgba(82, 196, 26, 0.2)' : 'rgba(24, 144, 255, 0.2)'
+    title = data.userName || t('chat.history.user_node')
+
+    // 用户头像
+    if (data.userAvatar) {
+      avatar = <Avatar src={data.userAvatar} alt={title} />
+    } else {
+      avatar = <Avatar icon={<UserOutlined />} style={{ backgroundColor: '#1890ff' }} />
+    }
+  } else if (nodeType === 'assistant') {
+    borderColor = isSelected ? '#52c41a' : '#722ed1' // 助手节点颜色
+    backgroundColor = isSelected ? 'rgba(82, 196, 26, 0.1)' : 'rgba(114, 46, 209, 0.1)'
+    gradientColor = isSelected ? 'rgba(82, 196, 26, 0.2)' : 'rgba(114, 46, 209, 0.2)'
+    title = `${data.model || t('chat.history.assistant_node')}`
+
+    // 模型头像
+    if (data.modelInfo) {
+      avatar = <ModelAvatar model={data.modelInfo} size={32} />
+    } else if (data.modelId) {
+      const modelLogo = getModelLogo(data.modelId)
+      avatar = (
+        <Avatar
+          src={modelLogo}
+          icon={!modelLogo ? <RobotOutlined /> : undefined}
+          style={{ backgroundColor: '#722ed1' }}
+        />
+      )
+    } else {
+      avatar = <Avatar icon={<RobotOutlined />} style={{ backgroundColor: '#722ed1' }} />
+    }
+  }
+
+  // 处理节点点击事件，选择节点路径
+  const handleNodeClick = () => {
+    if (data.onNodeClick && data.nodeId) {
+      data.onNodeClick(data.nodeId)
+    }
+  }
+
+  // 处理添加分支按钮点击
+  const handleAddBranch = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (data.onAddBranch && data.nodeId) {
+      data.onAddBranch(data.nodeId)
+    }
+  }
+
+  // 隐藏连接点的通用样式
+  const handleStyle = {
+    opacity: 0,
+    width: '12px',
+    height: '12px',
+    background: 'transparent',
+    border: 'none'
+  }
+
+  return (
+    <Tooltip
+      title={
+        <TooltipContent>
+          <TooltipTitle>{title}</TooltipTitle>
+          <TooltipBody>{data.content}</TooltipBody>
+          <TooltipFooter>{t('dialogMap.click_to_select')}</TooltipFooter>
+        </TooltipContent>
+      }
+      placement="top"
+      color="rgba(0, 0, 0, 0.85)"
+      mouseEnterDelay={0.3}
+      mouseLeaveDelay={0.1}
+      destroyTooltipOnHide>
+      <CustomNodeContainer
+        style={{
+          borderColor,
+          background: `linear-gradient(135deg, ${backgroundColor} 0%, ${gradientColor} 100%)`,
+          boxShadow: `0 4px 10px rgba(0, 0, 0, 0.1), 0 0 0 2px ${borderColor}40`
+        }}
+        onClick={handleNodeClick}
+        $isSelected={isSelected}>
+        <Handle type="target" position={Position.Top} style={handleStyle} isConnectable={false} />
+        <Handle type="target" position={Position.Left} style={handleStyle} isConnectable={false} />
+
+        <NodeHeader>
+          <NodeAvatar>{avatar}</NodeAvatar>
+          <NodeTitle>{title}</NodeTitle>
+          {nodeType === 'assistant' && (
+            <AddBranchButton onClick={handleAddBranch}>
+              <PlusOutlined />
+            </AddBranchButton>
+          )}
+        </NodeHeader>
+        <NodeContent title={data.content}>{data.content}</NodeContent>
+
+        <Handle type="source" position={Position.Bottom} style={handleStyle} isConnectable={false} />
+        <Handle type="source" position={Position.Right} style={handleStyle} isConnectable={false} />
+      </CustomNodeContainer>
+    </Tooltip>
+  )
+}
+
+// 创建自定义节点类型
+const nodeTypes: NodeTypes = { dialogMapNode: DialogMapNode }
+
+interface DialogMapProps {
+  topic: Topic
+  onClose: () => void
+}
+
+// 统一的边样式
+const commonEdgeStyle = {
+  stroke: 'var(--color-border)',
+  strokeWidth: 2
+}
+
+// 统一的边配置
+const defaultEdgeOptions = {
+  animated: true,
+  style: commonEdgeStyle,
+  type: 'smoothstep',
+  markerEnd: undefined,
+  zIndex: 5
+}
+
+// 主对话地图组件
+const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
+  const { t } = useTranslation()
+  const [nodes, setNodes, onNodesChange] = useNodesState<any>([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState<any>([])
+  const [loading, setLoading] = useState(true)
+  const [dialogMap, setDialogMap] = useState<DialogMapType | null>(null)
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
+  const { theme } = useTheme()
+  const dispatch = useAppDispatch()
+  const dialogMapRef = useRef<DialogMapType | null>(null)
+
+  useEffect(() => {
+    dialogMapRef.current = dialogMap
+  }, [dialogMap])
+
+  // 监听消息更新事件
+  useEffect(() => {
+    const unsubscribe = EventEmitter.on(EVENT_NAMES.MESSAGES_UPDATED, async (data: { topicId: string }) => {
+      if (data.topicId === topic.id) {
+        // 重新加载对话地图
+        await loadDialogMap()
+      }
+    })
+
+    return () => unsubscribe()
+  }, [topic.id])
+
+  // 每次打开地图时重新加载数据
+  useEffect(() => {
+    if (topic) {
+      loadDialogMap()
+    }
+  }, [topic])
+
+  // 加载对话地图数据
+  const loadDialogMap = useCallback(async () => {
+    if (!topic) return
+
+    setLoading(true)
+    try {
+      // 获取主题的最新消息
+      const currentTopic = await db.topics.get(topic.id)
+      if (!currentTopic) {
+        throw new Error(`Topic with id ${topic.id} not found`)
+      }
+
+      // 获取所有消息ID作为新的路径
+      const newPath = currentTopic.messages.map((msg) => msg.id)
+
+      // 获取或创建对话地图
+      let map = await DialogMapService.createDialogMapFromTopic(topic.id)
+
+      // 更新对话地图，合并新的路径
+      map = await DialogMapService.updateDialogMap(topic.id, newPath)
+
+      // 获取当前选中的路径
+      const currentSelectedPath = map.selectedPath || []
+
+      // 确保根节点是用户的第一个提问
+      const rootNode = Object.values(map.nodes).find((node) => !node.parentId)
+
+      if (rootNode && rootNode.role !== 'user') {
+        // 如果不是用户消息，找到第一个用户消息作为根节点
+        const firstUserNode = Object.values(map.nodes).find((node) => node.role === 'user')
+
+        if (firstUserNode) {
+          // 更新根节点关系
+          map.rootNodeId = firstUserNode.id
+          firstUserNode.parentId = null
+          // 更新其他节点的父节点关系
+          Object.values(map.nodes).forEach((node) => {
+            if (node.id !== firstUserNode.id && node.parentId === rootNode.id) {
+              node.parentId = firstUserNode.id
+              firstUserNode.children.push(node.id)
+            }
+          })
+          // 删除原来的根节点
+          delete map.nodes[rootNode.id]
+        }
+      } else if (rootNode) {
+        // 确保 rootNodeId 与实际根节点一致
+        map.rootNodeId = rootNode.id
+      }
+
+      // 更新节点的选中状态，只选中当前路径上的节点
+      Object.values(map.nodes).forEach((node) => {
+        node.isSelected = currentSelectedPath.includes(node.id)
+      })
+
+      setDialogMap(map)
+      setSelectedNodeIds(currentSelectedPath)
+    } catch (error) {
+      console.error('Failed to load dialog map:', error)
+    } finally {
+      setLoading(false)
+    }
+  }, [topic])
+
+  // 处理节点点击，更新选择的路径
+  const handleNodeClick = useCallback(
+    async (nodeId: string) => {
+      if (!dialogMap) return
+
+      // 查找节点的祖先路径
+      const findAncestors = (id: string, result: string[] = []): string[] => {
+        const node = dialogMap.nodes[id]
+        if (!node) return result
+
+        result.unshift(id)
+
+        if (node.parentId && dialogMap.nodes[node.parentId]) {
+          return findAncestors(node.parentId, result)
+        }
+
+        return result
+      }
+
+      // 查找节点的子孙路径（深度优先）
+      const findDescendants = (id: string, result: string[] = []): string[] => {
+        const node = dialogMap.nodes[id]
+        if (!node) return result
+
+        if (!result.includes(id)) {
+          result.push(id)
+        }
+
+        if (node.children.length === 0) return result
+
+        // 只跟随第一个子节点的路径
+        return findDescendants(node.children[0], result)
+      }
+
+      // 构建完整路径：祖先 + 当前节点 + 第一个子路径
+      const ancestors = findAncestors(nodeId)
+      const fullPath = [...ancestors]
+
+      // 当前节点不是叶子节点时，添加第一个子路径
+      const currentNode = dialogMap.nodes[nodeId]
+      if (currentNode && currentNode.children.length > 0) {
+        // 去掉已经添加的当前节点
+        const descendants = findDescendants(currentNode.children[0])
+        fullPath.push(...descendants)
+      }
+
+      // 更新选中状态
+      const updatedNodes = { ...dialogMap.nodes }
+      Object.keys(updatedNodes).forEach((id) => {
+        updatedNodes[id].isSelected = fullPath.includes(id)
+      })
+
+      // 更新状态
+      setSelectedNodeIds(fullPath)
+      setDialogMap({
+        ...dialogMap,
+        nodes: updatedNodes,
+        selectedPath: fullPath
+      })
+
+      // 保存选择的路径
+      await DialogMapService.setSelectedPath(dialogMap.id, fullPath)
+    },
+    [dialogMap]
+  )
+
+  // 添加处理新分支的函数
+  const handleAddBranch = useCallback(
+    async (nodeId: string) => {
+      if (!dialogMap) return
+
+      // 查找节点的祖先路径
+      const findAncestors = (id: string, result: string[] = []): string[] => {
+        const node = dialogMap.nodes[id]
+        if (!node) return result
+
+        result.unshift(id)
+
+        if (node.parentId && dialogMap.nodes[node.parentId]) {
+          return findAncestors(node.parentId, result)
+        }
+
+        return result
+      }
+
+      // 获取到当前节点的路径
+      const ancestors = findAncestors(nodeId)
+
+      // 更新节点的选中状态
+      const updatedNodes = { ...dialogMap.nodes }
+      Object.keys(updatedNodes).forEach((id) => {
+        updatedNodes[id].isSelected = ancestors.includes(id)
+      })
+
+      // 更新状态
+      setSelectedNodeIds(ancestors)
+      setDialogMap({
+        ...dialogMap,
+        nodes: updatedNodes,
+        selectedPath: ancestors
+      })
+
+      // 保存选择的路径
+      await DialogMapService.setSelectedPath(dialogMap.id, ancestors)
+
+      // 根据选中的路径生成消息列表
+      const messages = await DialogMapService.generateMessagesFromPath(dialogMap, ancestors)
+
+      // 更新当前对话的消息
+      dispatch(updateMessages(topic, messages))
+
+      // 发送事件通知消息已更新
+      EventEmitter.emit(EVENT_NAMES.MESSAGES_UPDATED, { topicId: topic.id })
+
+      // 关闭对话地图窗口
+      onClose()
+    },
+    [dialogMap, topic, dispatch, onClose]
+  )
+
+  // 应用选中的路径生成新的对话
+  const applySelectedPath = useCallback(async () => {
+    if (!dialogMap || !topic) return
+
+    // 查找选中路径中的所有节点
+    const findPathNodes = (nodeIds: string[]): string[] => {
+      const result: string[] = []
+      const visited = new Set<string>()
+
+      // 首先找到所有选中的节点
+      const selectedNodes = nodeIds.map((id) => dialogMap.nodes[id]).filter(Boolean)
+
+      // 找到最深的选中节点（即离根节点最远的节点）
+      const findDeepestNode = (nodes: DialogMapNodeType[]): DialogMapNodeType => {
+        let deepestNode = nodes[0]
+        let maxDepth = 0
+
+        const calculateDepth = (nodeId: string, depth: number = 0): number => {
+          const node = dialogMap.nodes[nodeId]
+          if (!node || !node.parentId) return depth
+          return calculateDepth(node.parentId, depth + 1)
+        }
+
+        nodes.forEach((node) => {
+          const depth = calculateDepth(node.id)
+          if (depth > maxDepth) {
+            maxDepth = depth
+            deepestNode = node
+          }
+        })
+
+        return deepestNode
+      }
+
+      // 从最深的节点开始，构建完整路径
+      const deepestNode = findDeepestNode(selectedNodes)
+      let currentNode: DialogMapNodeType | null = deepestNode
+
+      // 从最深节点向上遍历到根节点
+      while (currentNode) {
+        if (!visited.has(currentNode.id)) {
+          result.unshift(currentNode.id)
+          visited.add(currentNode.id)
+        }
+        currentNode = currentNode.parentId ? dialogMap.nodes[currentNode.parentId] : null
+      }
+
+      // 从最深节点向下遍历到叶子节点
+      currentNode = deepestNode
+      while (currentNode && currentNode.children.length > 0) {
+        const nextNode = dialogMap.nodes[currentNode.children[0]]
+        if (!nextNode) break
+        if (!visited.has(nextNode.id)) {
+          result.push(nextNode.id)
+          visited.add(nextNode.id)
+        }
+        currentNode = nextNode
+      }
+
+      return result
+    }
+
+    // 获取完整的路径
+    const fullPath = findPathNodes(selectedNodeIds)
+
+    // 根据完整的路径生成消息列表
+    const messages = await DialogMapService.generateMessagesFromPath(dialogMap, fullPath)
+
+    // 更新当前对话的消息
+    dispatch(updateMessages(topic, messages))
+
+    // 发送事件通知消息已更新
+    EventEmitter.emit(EVENT_NAMES.MESSAGES_UPDATED, { topicId: topic.id })
+
+    // 关闭对话地图
+    onClose()
+  }, [dialogMap, selectedNodeIds, topic, dispatch, onClose])
+
+  // 构建对话地图数据结构
+  const buildDialogMapFlowData = useCallback(() => {
+    if (!dialogMap) return { nodes: [], edges: [] }
+
+    // 创建节点和边
+    const flowNodes: Node[] = []
+    const flowEdges: Edge[] = []
+
+    // 节点布局参数 - 垂直布局
+    const verticalGap = 160 // 垂直间距
+    const horizontalGap = 300 // 水平间距（用于分支）
+    const initialX = 400 // 初始X位置（居中）
+    const initialY = 100 // 初始Y位置
+
+    // 先计算每个节点的层级（深度）
+    const nodeLevels: Record<string, number> = {}
+
+    // 计算节点的层级（从根节点到叶子节点）
+    const calculateNodeLevels = (nodes: Record<string, DialogMapNodeType>) => {
+      // 首先找到没有父节点的节点（根节点）
+      const rootNodes = Object.values(nodes).filter((node) => !node.parentId)
+
+      // 从根节点开始，为每个节点分配层级
+      const assignLevel = (nodeId: string, level: number) => {
+        nodeLevels[nodeId] = level
+        const node = nodes[nodeId]
+        if (node && node.children.length > 0) {
+          node.children.forEach((childId) => {
+            assignLevel(childId, level + 1)
+          })
+        }
+      }
+
+      rootNodes.forEach((node) => {
+        assignLevel(node.id, 0)
+      })
+    }
+
+    calculateNodeLevels(dialogMap.nodes)
+
+    // 按层级对节点进行分组
+    const nodesByLevel: Record<number, string[]> = {}
+    Object.entries(nodeLevels).forEach(([nodeId, level]) => {
+      if (!nodesByLevel[level]) {
+        nodesByLevel[level] = []
+      }
+      nodesByLevel[level].push(nodeId)
+    })
+
+    // 计算节点的X坐标，使同一层级的节点水平排列，但主要分支保持在中央
+    const nodePositions: Record<string, { x: number; y: number }> = {}
+
+    // 逐层计算节点位置，从上到下
+    Object.keys(nodesByLevel)
+      .sort((a, b) => Number(a) - Number(b))
+      .forEach((levelStr) => {
+        const level = parseInt(levelStr, 10)
+        const nodesInLevel = nodesByLevel[level]
+
+        // 计算本层的Y坐标
+        const yPos = initialY + level * verticalGap
+
+        // 处理本层的每个节点
+        nodesInLevel.forEach((nodeId, index) => {
+          const node = dialogMap.nodes[nodeId]
+
+          // 如果是根节点或第一级，居中排列
+          if (level === 0) {
+            nodePositions[nodeId] = { x: initialX, y: yPos }
+            return
+          }
+
+          // 找到父节点并获取其位置
+          if (!node.parentId || !nodePositions[node.parentId]) {
+            // 没有父节点的位置信息，按索引计算位置
+            const xPos = initialX + (index - nodesInLevel.length / 2) * horizontalGap
+            nodePositions[nodeId] = { x: xPos, y: yPos }
+            return
+          }
+
+          // 获取父节点的X坐标
+          const parentX = nodePositions[node.parentId].x
+
+          // 获取该节点是父节点的第几个子节点
+          const siblingIndex = dialogMap.nodes[node.parentId].children.indexOf(nodeId)
+          const siblingCount = dialogMap.nodes[node.parentId].children.length
+
+          // 计算X位置偏移，使子节点围绕父节点均匀分布
+          let xOffset = 0
+          if (siblingCount > 1) {
+            // 奇数个子节点时，中间的子节点与父节点对齐
+            // 偶数个子节点时，从父节点左侧开始排列
+            xOffset = (siblingIndex - (siblingCount - 1) / 2) * horizontalGap
+          }
+
+          nodePositions[nodeId] = {
+            x: parentX + xOffset,
+            y: yPos
+          }
+        })
+      })
+
+    // 创建节点
+    Object.entries(dialogMap.nodes).forEach(([nodeId, node]) => {
+      if (!nodePositions[nodeId]) return
+
+      const { x, y } = nodePositions[nodeId]
+      const isSelected = node.isSelected
+
+      flowNodes.push({
+        id: nodeId,
+        type: 'dialogMapNode',
+        data: {
+          content: node.content,
+          type: node.role,
+          nodeId: nodeId,
+          isSelected,
+          modelId: node.modelId,
+          model: node.model?.name || t('dialogMap.unknown_model'),
+          modelInfo: node.model,
+          onNodeClick: handleNodeClick,
+          onAddBranch: handleAddBranch
+        },
+        position: { x, y },
+        sourcePosition: Position.Bottom,
+        targetPosition: Position.Top
+      })
+
+      // 创建与子节点的连接
+      node.children.forEach((childId) => {
+        flowEdges.push({
+          id: `edge-${nodeId}-to-${childId}`,
+          source: nodeId,
+          target: childId,
+          animated: false,
+          type: 'smoothstep'
+        })
+      })
+    })
+
+    return { nodes: flowNodes, edges: flowEdges }
+  }, [dialogMap, handleNodeClick, handleAddBranch, t])
+
+  // 当对话地图数据变化时，更新流程图
+  useEffect(() => {
+    if (!loading && dialogMap) {
+      const { nodes: flowNodes, edges: flowEdges } = buildDialogMapFlowData()
+      setNodes(flowNodes)
+      setEdges(flowEdges)
+    }
+  }, [loading, dialogMap, buildDialogMapFlowData, setNodes, setEdges])
+
+  return (
+    <FlowContainer>
+      <ActionButtons>
+        <Button type="primary" onClick={applySelectedPath} disabled={!dialogMap || selectedNodeIds.length === 0}>
+          {t('dialogMap.apply_selected_path')}
+        </Button>
+        <Button onClick={onClose}>{t('common.cancel')}</Button>
+      </ActionButtons>
+
+      {loading ? (
+        <LoadingContainer>
+          <Spin size="large" />
+        </LoadingContainer>
+      ) : dialogMap && nodes.length > 0 ? (
+        <ReactFlowProvider>
+          <div style={{ width: '100%', height: 'calc(100% - 50px)' }}>
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              nodeTypes={nodeTypes}
+              nodesDraggable={false}
+              nodesConnectable={false}
+              edgesFocusable={true}
+              zoomOnDoubleClick={true}
+              preventScrolling={true}
+              elementsSelectable={true}
+              selectNodesOnDrag={false}
+              nodesFocusable={true}
+              zoomOnScroll={true}
+              panOnScroll={false}
+              minZoom={0.4}
+              maxZoom={2}
+              defaultEdgeOptions={defaultEdgeOptions}
+              fitView={true}
+              fitViewOptions={{
+                padding: 0.3,
+                includeHiddenNodes: false,
+                minZoom: 0.4,
+                maxZoom: 2
+              }}
+              proOptions={{ hideAttribution: true }}
+              className="react-flow-container"
+              colorMode={theme === 'auto' ? 'system' : theme}>
+              <Controls showInteractive={false} />
+              <MiniMap
+                nodeStrokeWidth={3}
+                zoomable
+                pannable
+                nodeColor={(node) => {
+                  if (node.data.isSelected) return 'var(--color-success)'
+                  return node.data.type === 'user' ? 'var(--color-info)' : 'var(--color-primary)'
+                }}
+              />
+            </ReactFlow>
+          </div>
+        </ReactFlowProvider>
+      ) : (
+        <EmptyContainer>
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={<EmptyText>{t('dialogMap.no_conversation')}</EmptyText>}
+          />
+        </EmptyContainer>
+      )}
+    </FlowContainer>
+  )
+}
+
+// 样式组件定义
+const FlowContainer = styled.div`
+  width: 100%;
+  height: 100%;
+  min-height: 500px;
+  position: relative;
+`
+
+const LoadingContainer = styled.div`
+  width: 100%;
+  height: 100%;
+  min-height: 500px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+`
+
+const EmptyContainer = styled.div`
+  width: 100%;
+  height: 100%;
+  min-height: 500px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: var(--color-text-secondary);
+`
+
+const EmptyText = styled.div`
+  font-size: 16px;
+  margin-bottom: 8px;
+  font-weight: bold;
+`
+
+const ActionButtons = styled.div`
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 10;
+  display: flex;
+  gap: 8px;
+`
+
+interface CustomNodeContainerProps {
+  $isSelected: boolean
+}
+
+const CustomNodeContainer = styled.div<CustomNodeContainerProps>`
+  padding: 12px;
+  border-radius: 10px;
+  border: 2px solid;
+  width: 240px;
+  height: 100px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  ${(props) =>
+    props.$isSelected &&
+    `
+    box-shadow: 0 0 0 3px rgba(82, 196, 26, 0.4) !important;
+    transform: scale(1.02);
+  `}
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow:
+      0 6px 10px rgba(0, 0, 0, 0.1),
+      0 0 0 2px ${(props) => props.style?.borderColor || '#d9d9d9'}80 !important;
+    filter: brightness(1.02);
+  }
+
+  /* 添加点击动画效果 */
+  &:active {
+    transform: scale(0.98);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: all 0.1s ease;
+  }
+`
+
+const NodeHeader = styled.div`
+  font-weight: bold;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.2);
+  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+`
+
+const NodeAvatar = styled.span`
+  margin-right: 10px;
+  display: flex;
+  align-items: center;
+
+  .ant-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+`
+
+const NodeTitle = styled.span`
+  flex: 1;
+  font-size: 14px;
+  font-weight: bold;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`
+
+const NodeContent = styled.div`
+  margin: 2px 0;
+  color: var(--color-text);
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  line-height: 1.5;
+  word-break: break-word;
+  font-size: 13px;
+  padding: 3px;
+`
+
+// 添加分支按钮样式
+const AddBranchButton = styled(Button)`
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background-color: rgba(0, 0, 0, 0.05);
+  border: none;
+  color: var(--color-text);
+  transition: all 0.2s ease-in-out;
+
+  &:hover {
+    background-color: rgba(0, 0, 0, 0.1);
+    color: var(--color-primary);
+  }
+
+  &:active {
+    transform: scale(0.95);
+  }
+`
+
+export default memo(DialogMap)

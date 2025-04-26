@@ -1,0 +1,369 @@
+import db from '@renderer/databases'
+import { DialogMap, DialogMapNode, Message } from '@renderer/types'
+import { uuid } from '@renderer/utils'
+
+/**
+ * 对话地图服务
+ * 用于创建、查询和更新对话地图
+ */
+class DialogMapService {
+  /**
+   * 根据主题ID创建对话地图
+   * @param topicId 主题ID
+   * @returns 创建的对话地图
+   */
+  async createDialogMapFromTopic(topicId: string): Promise<DialogMap> {
+    // 检查是否已存在此主题的对话地图
+    const existingMap = await this.getDialogMapByTopicId(topicId)
+    if (existingMap) {
+      return existingMap
+    }
+
+    // 获取主题信息
+    const topic = await db.topics.get(topicId)
+    if (!topic) {
+      throw new Error(`Topic with id ${topicId} not found`)
+    }
+
+    // 构建对话地图节点
+    const nodes: Record<string, DialogMapNode> = {}
+    let rootNodeId: string | null = null
+    let previousNodeId: string | null = null
+
+    // 按顺序处理消息，建立链式结构
+    for (const message of topic.messages) {
+      const nodeId = uuid()
+
+      const node: DialogMapNode = {
+        id: nodeId,
+        messageId: message.id,
+        parentId: previousNodeId,
+        role: message.role,
+        content: message.content,
+        children: [],
+        createdAt: message.createdAt,
+        modelId: message.modelId,
+        model: message.model
+      }
+
+      // 如果是第一个节点，设置为根节点
+      if (!rootNodeId) {
+        rootNodeId = nodeId
+      }
+
+      // 如果有前一个节点，将当前节点添加为其子节点
+      if (previousNodeId) {
+        nodes[previousNodeId].children.push(nodeId)
+      }
+
+      nodes[nodeId] = node
+      previousNodeId = nodeId
+    }
+
+    if (!rootNodeId) {
+      throw new Error('No root node found in the conversation')
+    }
+
+    // 创建对话地图
+    const dialogMap: DialogMap = {
+      id: uuid(),
+      topicId,
+      rootNodeId,
+      nodes,
+      selectedPath: Object.keys(nodes),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    }
+
+    // 保存到数据库
+    await db.dialogMaps.put(dialogMap)
+
+    return dialogMap
+  }
+
+  /**
+   * 根据主题ID获取对话地图
+   * @param topicId 主题ID
+   * @returns 对话地图，如果不存在则返回null
+   */
+  async getDialogMapByTopicId(topicId: string): Promise<DialogMap | null> {
+    const dialogMaps = await db.dialogMaps.where('topicId').equals(topicId).toArray()
+    return dialogMaps.length > 0 ? dialogMaps[0] : null
+  }
+
+  /**
+   * 根据选中的路径生成消息列表
+   * @param dialogMap 对话地图
+   * @param path 选中的路径
+   * @returns 消息列表
+   */
+  async generateMessagesFromPath(dialogMap: DialogMap, path: string[]): Promise<Message[]> {
+    if (!path.length) {
+      return []
+    }
+
+    // 获取原始主题
+    const topic = await db.topics.get(dialogMap.topicId)
+    if (!topic) {
+      throw new Error(`Topic with id ${dialogMap.topicId} not found`)
+    }
+
+    // 收集原始消息映射 (消息ID -> 消息)
+    const messageMap = topic.messages.reduce(
+      (map, msg) => {
+        map[msg.id] = msg
+        return map
+      },
+      {} as Record<string, Message>
+    )
+
+    // 根据路径收集节点
+    const pathNodes = path
+      .map((nodeId) => {
+        const node = dialogMap.nodes[nodeId]
+        return node
+      })
+      .filter(Boolean)
+
+    // 按照路径顺序收集消息
+    const messages = pathNodes
+      .map((node) => {
+        let message = messageMap[node.messageId]
+        if (!message) {
+          // 如果消息不存在，从节点信息创建消息
+          message = {
+            id: node.messageId,
+            role: node.role,
+            content: node.content,
+            assistantId: node.modelId || '',
+            topicId: dialogMap.topicId,
+            createdAt: node.createdAt,
+            modelId: node.modelId || '',
+            model: node.model,
+            status: 'success',
+            type: 'text'
+          }
+          // 将新创建的消息添加到主题中
+          topic.messages.push(message)
+          messageMap[node.messageId] = message
+        }
+        return message
+      })
+      .filter(Boolean)
+
+    if (messages.length !== path.length) {
+      // 如果生成的消息数量与路径节点数量不匹配，记录警告
+      console.warn(`Warning: Generated ${messages.length} messages but path has ${path.length} nodes`)
+    }
+
+    // 更新主题消息
+    await db.topics.put(topic)
+
+    return messages
+  }
+
+  /**
+   * 设置选中的路径
+   * @param dialogMapId 对话地图ID
+   * @param path 选中的路径
+   */
+  async setSelectedPath(dialogMapId: string, path: string[]): Promise<DialogMap> {
+    const dialogMap = await db.dialogMaps.get(dialogMapId)
+    if (!dialogMap) {
+      throw new Error(`DialogMap with id ${dialogMapId} not found`)
+    }
+
+    dialogMap.selectedPath = path
+    dialogMap.updatedAt = new Date().toISOString()
+
+    // 更新选中状态
+    Object.keys(dialogMap.nodes).forEach((nodeId) => {
+      dialogMap.nodes[nodeId].isSelected = path.includes(nodeId)
+    })
+
+    await db.dialogMaps.put(dialogMap)
+
+    return dialogMap
+  }
+
+  /**
+   * 为节点添加新的子对话
+   * @param dialogMapId 对话地图ID
+   * @param parentNodeId 父节点ID
+   * @param messages 要添加的消息
+   */
+  async addChildDialog(dialogMapId: string, parentNodeId: string, messages: Message[]): Promise<DialogMap> {
+    const dialogMap = await db.dialogMaps.get(dialogMapId)
+    if (!dialogMap) {
+      throw new Error(`DialogMap with id ${dialogMapId} not found`)
+    }
+
+    let currentParentId = parentNodeId
+
+    // 处理新消息
+    for (const message of messages) {
+      const nodeId = uuid()
+
+      const node: DialogMapNode = {
+        id: nodeId,
+        messageId: message.id,
+        parentId: currentParentId,
+        role: message.role,
+        content: message.content,
+        children: [],
+        createdAt: message.createdAt,
+        modelId: message.modelId,
+        model: message.model
+      }
+
+      // 将当前节点添加到父节点的子节点列表
+      if (currentParentId && dialogMap.nodes[currentParentId]) {
+        dialogMap.nodes[currentParentId].children.push(nodeId)
+      }
+
+      dialogMap.nodes[nodeId] = node
+
+      // 如果是用户消息，则下一条助手消息的父节点是它
+      if (message.role === 'user') {
+        currentParentId = nodeId
+      }
+    }
+
+    dialogMap.updatedAt = new Date().toISOString()
+
+    await db.dialogMaps.put(dialogMap)
+
+    return dialogMap
+  }
+
+  /**
+   * 更新对话地图，将新的对话路径合并到现有地图中
+   * @param topicId 主题ID
+   * @param newPath 新的对话路径（消息ID数组）
+   * @returns 更新后的对话地图
+   */
+  async updateDialogMap(topicId: string, newPath: string[]): Promise<DialogMap> {
+    // 获取现有对话地图
+    const existingMap = await this.getDialogMapByTopicId(topicId)
+    if (!existingMap) {
+      throw new Error(`No dialog map found for topic ${topicId}`)
+    }
+
+    // 获取主题信息
+    const topic = await db.topics.get(topicId)
+    if (!topic) {
+      throw new Error(`Topic with id ${topicId} not found`)
+    }
+
+    // 创建消息ID到消息的映射
+    const messageMap = topic.messages.reduce(
+      (map, msg) => {
+        map[msg.id] = msg
+        return map
+      },
+      {} as Record<string, Message>
+    )
+
+    // 找到新路径中第一个不在现有地图中的消息
+    const firstNewMessageIndex = newPath.findIndex((msgId) => {
+      return !Object.values(existingMap.nodes).some((node) => node.messageId === msgId)
+    })
+
+    if (firstNewMessageIndex === -1) {
+      // 所有消息都已在地图中，直接返回现有地图
+      return existingMap
+    }
+
+    // 找到新路径中最后一个在现有地图中的消息
+    const lastExistingMessageIndex = firstNewMessageIndex - 1
+    const lastExistingMessageId = newPath[lastExistingMessageIndex]
+
+    // 找到对应的节点
+    const lastExistingNode = Object.values(existingMap.nodes).find((node) => node.messageId === lastExistingMessageId)
+
+    if (!lastExistingNode) {
+      throw new Error(`Cannot find node for message ${lastExistingMessageId}`)
+    }
+
+    // 从新消息开始处理
+    let currentParentId = lastExistingNode.id
+    const newNodes: Record<string, DialogMapNode> = {}
+
+    // 处理新消息
+    for (let i = firstNewMessageIndex; i < newPath.length; i++) {
+      const messageId = newPath[i]
+      const message = messageMap[messageId]
+      if (!message) {
+        console.warn(`Message ${messageId} not found in topic messages`)
+        continue
+      }
+
+      // 检查消息角色是否与父节点角色交替
+      const parentNode = currentParentId ? existingMap.nodes[currentParentId] || newNodes[currentParentId] : null
+      if (parentNode && parentNode.role === message.role) {
+        // 如果角色相同，说明这是一个新的分支，需要找到最近的合适父节点
+        let tempParentId: string | null = currentParentId
+        while (tempParentId) {
+          const node = existingMap.nodes[tempParentId] || newNodes[tempParentId]
+          if (!node) break
+          if (node.role !== message.role) {
+            currentParentId = tempParentId
+            break
+          }
+          tempParentId = node.parentId
+        }
+      }
+
+      const nodeId = uuid()
+
+      const node: DialogMapNode = {
+        id: nodeId,
+        messageId: message.id,
+        parentId: currentParentId,
+        role: message.role,
+        content: message.content,
+        children: [],
+        createdAt: message.createdAt,
+        modelId: message.modelId,
+        model: message.model
+      }
+
+      // 将当前节点添加到父节点的子节点列表
+      if (currentParentId) {
+        const parentNode = existingMap.nodes[currentParentId] || newNodes[currentParentId]
+        if (parentNode) {
+          parentNode.children.push(nodeId)
+        }
+      }
+
+      newNodes[nodeId] = node
+      currentParentId = nodeId
+
+      // 确保消息被添加到主题中
+      if (!messageMap[message.id]) {
+        topic.messages.push(message)
+        messageMap[message.id] = message
+      }
+    }
+
+    // 更新主题消息
+    await db.topics.put(topic)
+
+    // 合并新节点到现有地图
+    const updatedMap: DialogMap = {
+      ...existingMap,
+      nodes: {
+        ...existingMap.nodes,
+        ...newNodes
+      },
+      updatedAt: new Date().toISOString()
+    }
+
+    // 保存更新后的地图
+    await db.dialogMaps.put(updatedMap)
+
+    return updatedMap
+  }
+}
+
+export default new DialogMapService()

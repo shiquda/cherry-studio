@@ -120,6 +120,31 @@ export type Topic = {
   isNameManuallyEdited?: boolean
 }
 
+// 对话地图节点数据类型
+export type DialogMapNode = {
+  id: string
+  messageId: string
+  parentId: string | null
+  role: 'user' | 'assistant'
+  content: string
+  children: string[] // 子节点ID数组
+  createdAt: string
+  isSelected?: boolean
+  modelId?: string
+  model?: Model
+}
+
+// 对话地图类型
+export type DialogMap = {
+  id: string
+  topicId: string
+  rootNodeId: string
+  nodes: Record<string, DialogMapNode> // 节点ID -> 节点对象的映射
+  selectedPath: string[] // 选中的对话路径（节点ID数组）
+  createdAt: string
+  updatedAt: string
+}
+
 export type User = {
   id: string
   name: string
