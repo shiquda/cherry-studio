@@ -186,7 +186,7 @@ const DialogMapNode: FC<{ data: any }> = ({ data }) => {
               </AddBranchButton>
             )}
           </NodeHeader>
-          <NodeContent title={data.content}>{data.content}</NodeContent>
+          <NodeContent>{data.content}</NodeContent>
 
           <Handle type="source" position={Position.Bottom} style={handleStyle} isConnectable={false} />
           <Handle type="source" position={Position.Right} style={handleStyle} isConnectable={false} />
