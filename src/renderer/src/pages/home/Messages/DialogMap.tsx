@@ -11,8 +11,8 @@ import { useAppDispatch } from '@renderer/store'
 import { updateMessages } from '@renderer/store/messages'
 import type { DialogMap as DialogMapType, Topic } from '@renderer/types'
 import { buildDialogMapFlowData } from '@renderer/utils/dialogMapUtils'
-import { Controls, Handle, MiniMap, ReactFlow, ReactFlowProvider } from '@xyflow/react'
-import { NodeTypes, Position, useEdgesState, useNodesState } from '@xyflow/react'
+import { BezierEdge, Controls, Handle, MiniMap, ReactFlow, ReactFlowProvider } from '@xyflow/react'
+import { EdgeTypes, NodeTypes, Position, useEdgesState, useNodesState } from '@xyflow/react'
 import { Avatar, Button, Dropdown, Empty, Modal, Spin, Tooltip } from 'antd'
 import { FC, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -200,6 +200,9 @@ const DialogMapNode: FC<{ data: any }> = ({ data }) => {
 
 // 创建自定义节点类型
 const nodeTypes: NodeTypes = { dialogMapNode: DialogMapNode }
+
+// 添加边缘类型
+const edgeTypes: EdgeTypes = { bezier: BezierEdge }
 
 interface DialogMapProps {
   topic: Topic
@@ -508,6 +511,7 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
               nodesDraggable={false}
               nodesConnectable={false}
               edgesFocusable={true}
