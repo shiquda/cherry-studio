@@ -1498,7 +1498,8 @@
       "delete_node_confirm_content": "确定要删除此节点及其所有子节点吗？此操作不可撤销。",
       "delete_node_error": "删除节点失败",
       "unknown_model": "未知模型",
-      "no_conversation": "暂无对话"
+      "no_conversation": "暂无对话",
+      "navigate_to_node": "定位到对应消息"
     }
   }
 }

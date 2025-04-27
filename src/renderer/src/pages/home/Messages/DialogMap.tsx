@@ -1,6 +1,6 @@
 import '@xyflow/react/dist/style.css'
 
-import { DeleteOutlined, PlusOutlined, RobotOutlined, UserOutlined } from '@ant-design/icons'
+import { ArrowRightOutlined, DeleteOutlined, PlusOutlined, RobotOutlined, UserOutlined } from '@ant-design/icons'
 import ModelAvatar from '@renderer/components/Avatar/ModelAvatar'
 import { getModelLogo } from '@renderer/config/models'
 import { useTheme } from '@renderer/context/ThemeProvider'
@@ -106,6 +106,16 @@ const DialogMapNode: FC<{ data: any }> = ({ data }) => {
 
   // 右键菜单项
   const contextMenuItems = [
+    {
+      key: 'navigate',
+      label: t('dialogMap.navigate_to_node'),
+      icon: <ArrowRightOutlined />,
+      onClick: () => {
+        if (data.onNavigateToNode && data.nodeId) {
+          data.onNavigateToNode(data.nodeId)
+        }
+      }
+    },
     {
       key: 'delete',
       label: t('dialogMap.delete_node'),
@@ -515,6 +525,96 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
     onClose()
   }, [dialogMap, selectedNodeIds, topic, dispatch, onClose])
 
+  // 处理跳转到节点的功能
+  const handleNavigateToNode = useCallback(
+    async (nodeId: string) => {
+      if (!dialogMap || !topic) return
+
+      // 获取节点
+      const node = dialogMap.nodes[nodeId]
+      if (!node || !node.messageId) return
+
+      // 检查节点是否在当前选中的path中
+      const isInSelectedPath = node.isSelected
+
+      // 如果不在当前选中的path中，先切换path
+      if (!isInSelectedPath) {
+        // 查找节点的祖先路径
+        const findAncestors = (id: string, result: string[] = []): string[] => {
+          const node = dialogMap.nodes[id]
+          if (!node) return result
+
+          result.unshift(id)
+
+          if (node.parentId && dialogMap.nodes[node.parentId]) {
+            return findAncestors(node.parentId, result)
+          }
+
+          return result
+        }
+
+        // 查找节点的子孙路径（深度优先）
+        const findDescendants = (id: string, result: string[] = []): string[] => {
+          const node = dialogMap.nodes[id]
+          if (!node) return result
+
+          if (!result.includes(id)) {
+            result.push(id)
+          }
+
+          if (node.children.length === 0) return result
+
+          // 只跟随第一个子节点的路径
+          return findDescendants(node.children[0], result)
+        }
+
+        // 构建完整路径：祖先 + 当前节点 + 第一个子路径
+        const ancestors = findAncestors(nodeId)
+        const fullPath = [...ancestors]
+
+        // 当前节点不是叶子节点时，添加第一个子路径
+        if (node.children.length > 0) {
+          // 去掉已经添加的当前节点
+          const descendants = findDescendants(node.children[0])
+          fullPath.push(...descendants)
+        }
+
+        // 更新选中状态
+        const updatedNodes = { ...dialogMap.nodes }
+        Object.keys(updatedNodes).forEach((id) => {
+          updatedNodes[id].isSelected = fullPath.includes(id)
+        })
+
+        // 更新状态
+        setSelectedNodeIds(fullPath)
+        setDialogMap({
+          ...dialogMap,
+          nodes: updatedNodes,
+          selectedPath: fullPath
+        })
+
+        // 保存选择的路径
+        await DialogMapService.setSelectedPath(dialogMap.id, fullPath)
+
+        // 根据选中的路径生成消息列表
+        const messages = await DialogMapService.generateMessagesFromPath(dialogMap, fullPath)
+
+        // 更新当前对话的消息
+        dispatch(updateMessages(topic, messages))
+
+        // 发送事件通知消息已更新
+        EventEmitter.emit(EVENT_NAMES.MESSAGES_UPDATED, { topicId: topic.id })
+      }
+
+      // 发送LOCATE_MESSAGE事件，定位到消息
+      EventEmitter.emit(EVENT_NAMES.LOCATE_MESSAGE + ':' + node.messageId)
+
+      // 关闭对话地图
+      onClose()
+    },
+    [dialogMap, topic, dispatch, setSelectedNodeIds, setDialogMap, onClose]
+  )
+
   // 处理删除节点
   const handleDeleteNode = useCallback(
     async (nodeId: string) => {
@@ -760,13 +860,15 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
           content: node.content,
           type: node.role,
           nodeId: nodeId,
+          messageId: node.messageId,
           isSelected,
           modelId: node.modelId,
           model: node.model?.name || t('dialogMap.unknown_model'),
           modelInfo: node.model,
           onNodeClick: handleNodeClick,
           onAddBranch: handleAddBranch,
-          onDeleteNode: handleDeleteNode
+          onDeleteNode: handleDeleteNode,
+          onNavigateToNode: handleNavigateToNode
         },
         position: { x, y }
       })
@@ -834,7 +936,7 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
     })
 
     return { nodes: flowNodes, edges: flowEdges }
-  }, [dialogMap, handleNodeClick, handleAddBranch, handleDeleteNode, t])
+  }, [dialogMap, handleNodeClick, handleAddBranch, handleDeleteNode, handleNavigateToNode, t])
 
   // 当对话地图数据变化时，更新流程图
   useEffect(() => {
