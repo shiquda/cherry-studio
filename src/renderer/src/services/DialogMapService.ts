@@ -364,6 +364,91 @@ class DialogMapService {
 
     return updatedMap
   }
+
+  /**
+   * 删除节点及其所有子孙节点
+   * @param dialogMapId 对话地图ID
+   * @param nodeId 要删除的节点ID
+   * @returns 更新后的对话地图
+   */
+  async deleteNodeAndDescendants(dialogMapId: string, nodeId: string): Promise<DialogMap> {
+    const dialogMap = await db.dialogMaps.get(dialogMapId)
+    if (!dialogMap) {
+      throw new Error(`DialogMap with id ${dialogMapId} not found`)
+    }
+
+    // 获取要删除的节点
+    const nodeToDelete = dialogMap.nodes[nodeId]
+    if (!nodeToDelete) {
+      throw new Error(`Node with id ${nodeId} not found in dialog map`)
+    }
+
+    // 不允许删除根节点
+    if (nodeId === dialogMap.rootNodeId) {
+      throw new Error('Cannot delete root node')
+    }
+
+    // 找到节点的父节点
+    const parentNode = nodeToDelete.parentId ? dialogMap.nodes[nodeToDelete.parentId] : null
+    if (!parentNode) {
+      throw new Error(`Parent node not found for node ${nodeId}`)
+    }
+
+    // 从父节点的子节点列表中移除当前节点
+    parentNode.children = parentNode.children.filter((childId) => childId !== nodeId)
+
+    // 递归收集所有要删除的节点ID
+    const collectNodesToDelete = (id: string, result: Set<string>): Set<string> => {
+      result.add(id)
+      const node = dialogMap.nodes[id]
+      if (node && node.children.length > 0) {
+        for (const childId of node.children) {
+          collectNodesToDelete(childId, result)
+        }
+      }
+      return result
+    }
+
+    const nodesToDeleteSet = collectNodesToDelete(nodeId, new Set<string>())
+    const nodesToDelete = Array.from(nodesToDeleteSet)
+
+    // 保存当前选中路径中不被删除的节点
+    let updatedSelectedPath = dialogMap.selectedPath.filter((id) => !nodesToDelete.includes(id))
+
+    // 从节点映射中删除节点
+    nodesToDelete.forEach((id) => {
+      delete dialogMap.nodes[id]
+    })
+
+    // 如果选中路径为空，则选择默认路径（从根节点到某个叶子节点）
+    if (updatedSelectedPath.length === 0) {
+      // 构建从根节点到某个叶子节点的路径
+      const buildDefaultPath = (id: string, path: string[] = []): string[] => {
+        path.push(id)
+        const node = dialogMap.nodes[id]
+        if (node && node.children.length > 0) {
+          return buildDefaultPath(node.children[0], path)
+        }
+        return path
+      }
+
+      updatedSelectedPath = buildDefaultPath(dialogMap.rootNodeId)
+    }
+
+    // 更新节点的选中状态
+    Object.values(dialogMap.nodes).forEach((node) => {
+      node.isSelected = updatedSelectedPath.includes(node.id)
+    })
+
+    // 更新对话地图
+    dialogMap.selectedPath = updatedSelectedPath
+    dialogMap.updatedAt = new Date().toISOString()
+
+    // 保存更新后的地图
+    await db.dialogMaps.put(dialogMap)
+
+    return dialogMap
+  }
 }
 
 export default new DialogMapService()

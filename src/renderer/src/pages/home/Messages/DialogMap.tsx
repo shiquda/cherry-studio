@@ -1,6 +1,6 @@
 import '@xyflow/react/dist/style.css'
 
-import { PlusOutlined, RobotOutlined, UserOutlined } from '@ant-design/icons'
+import { DeleteOutlined, PlusOutlined, RobotOutlined, UserOutlined } from '@ant-design/icons'
 import ModelAvatar from '@renderer/components/Avatar/ModelAvatar'
 import { getModelLogo } from '@renderer/config/models'
 import { useTheme } from '@renderer/context/ThemeProvider'
@@ -12,7 +12,7 @@ import { updateMessages } from '@renderer/store/messages'
 import type { DialogMap as DialogMapType, DialogMapNode as DialogMapNodeType, Topic } from '@renderer/types'
 import { Controls, Handle, MiniMap, ReactFlow, ReactFlowProvider } from '@xyflow/react'
 import { Edge, MarkerType, Node, NodeTypes, Position, useEdgesState, useNodesState } from '@xyflow/react'
-import { Avatar, Button, Empty, Spin, Tooltip } from 'antd'
+import { Avatar, Button, Dropdown, Empty, Modal, Spin, Tooltip } from 'antd'
 import { FC, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -70,7 +70,7 @@ const DialogMapNode: FC<{ data: any }> = ({ data }) => {
     borderColor = isSelected ? 'var(--color-primary)' : 'var(--color-black-mute)' // 助手节点颜色
     backgroundColor = isSelected ? 'var(--color-primary-mute)' : 'var(--color-black-soft)'
     gradientColor = isSelected ? 'var(--color-primary-soft)' : 'var(--color-black-mute-soft)'
-    title = `${data.model || t('chat.history.assistant_node')}`
+    title = `${data.model || t('dialogMap.unknown_model')}`
 
     // 模型头像
     if (data.modelInfo) {
@@ -104,6 +104,30 @@ const DialogMapNode: FC<{ data: any }> = ({ data }) => {
     }
   }
 
+  // 右键菜单项
+  const contextMenuItems = [
+    {
+      key: 'delete',
+      label: t('dialogMap.delete_node'),
+      icon: <DeleteOutlined />,
+      danger: true,
+      onClick: () => {
+        if (data.onDeleteNode && data.nodeId) {
+          Modal.confirm({
+            title: t('dialogMap.delete_node_confirm_title'),
+            content: t('dialogMap.delete_node_confirm_content'),
+            okText: t('common.delete'),
+            cancelText: t('common.cancel'),
+            okButtonProps: { danger: true },
+            onOk: () => {
+              data.onDeleteNode(data.nodeId)
+            }
+          })
+        }
+      }
+    }
+  ]
+
   // 隐藏连接点的通用样式
   const handleStyle = {
     opacity: 0,
@@ -127,31 +151,33 @@ const DialogMapNode: FC<{ data: any }> = ({ data }) => {
       mouseEnterDelay={0.3}
       mouseLeaveDelay={0.1}
       destroyTooltipOnHide>
-      <CustomNodeContainer
-        style={{
-          borderColor,
-          background: `linear-gradient(135deg, ${backgroundColor} 0%, ${gradientColor} 100%)`,
-          boxShadow: `0 4px 10px rgba(0, 0, 0, 0.1), 0 0 0 2px ${borderColor}40`
-        }}
-        onClick={handleNodeClick}
-        $isSelected={isSelected}>
-        <Handle type="target" position={Position.Top} style={handleStyle} isConnectable={false} />
-        <Handle type="target" position={Position.Left} style={handleStyle} isConnectable={false} />
+      <Dropdown menu={{ items: contextMenuItems }} trigger={['contextMenu']}>
+        <CustomNodeContainer
+          style={{
+            borderColor,
+            background: `linear-gradient(135deg, ${backgroundColor} 0%, ${gradientColor} 100%)`,
+            boxShadow: `0 4px 10px rgba(0, 0, 0, 0.1), 0 0 0 2px ${borderColor}40`
+          }}
+          onClick={handleNodeClick}
+          $isSelected={isSelected}>
+          <Handle type="target" position={Position.Top} style={handleStyle} isConnectable={false} />
+          <Handle type="target" position={Position.Left} style={handleStyle} isConnectable={false} />
 
-        <NodeHeader>
-          <NodeAvatar>{avatar}</NodeAvatar>
-          <NodeTitle>{title}</NodeTitle>
-          {nodeType === 'assistant' && (
-            <AddBranchButton onClick={handleAddBranch}>
-              <PlusOutlined />
-            </AddBranchButton>
-          )}
-        </NodeHeader>
-        <NodeContent title={data.content}>{data.content}</NodeContent>
+          <NodeHeader>
+            <NodeAvatar>{avatar}</NodeAvatar>
+            <NodeTitle>{title}</NodeTitle>
+            {nodeType === 'assistant' && (
+              <AddBranchButton onClick={handleAddBranch}>
+                <PlusOutlined />
+              </AddBranchButton>
+            )}
+          </NodeHeader>
+          <NodeContent title={data.content}>{data.content}</NodeContent>
 
-        <Handle type="source" position={Position.Bottom} style={handleStyle} isConnectable={false} />
-        <Handle type="source" position={Position.Right} style={handleStyle} isConnectable={false} />
-      </CustomNodeContainer>
+          <Handle type="source" position={Position.Bottom} style={handleStyle} isConnectable={false} />
+          <Handle type="source" position={Position.Right} style={handleStyle} isConnectable={false} />
+        </CustomNodeContainer>
+      </Dropdown>
     </Tooltip>
   )
 }
@@ -483,6 +509,41 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
     onClose()
   }, [dialogMap, selectedNodeIds, topic, dispatch, onClose])
 
+  // 处理删除节点
+  const handleDeleteNode = useCallback(
+    async (nodeId: string) => {
+      if (!dialogMap) return
+
+      try {
+        // 调用服务删除节点及其子节点
+        const updatedMap = await DialogMapService.deleteNodeAndDescendants(dialogMap.id, nodeId)
+
+        // 更新状态
+        setDialogMap(updatedMap)
+        setSelectedNodeIds(updatedMap.selectedPath)
+
+        // 如果删除后选择了新的路径，则更新对话
+        if (updatedMap.selectedPath && updatedMap.selectedPath.length > 0) {
+          // 根据选中的路径生成消息列表
+          const messages = await DialogMapService.generateMessagesFromPath(updatedMap, updatedMap.selectedPath)
+
+          // 更新当前对话的消息
+          dispatch(updateMessages(topic, messages))
+
+          // 发送事件通知消息已更新
+          EventEmitter.emit(EVENT_NAMES.MESSAGES_UPDATED, { topicId: topic.id })
+        }
+      } catch (error) {
+        console.error('Failed to delete node:', error)
+        Modal.error({
+          title: t('dialogMap.delete_node_error'),
+          content: String(error)
+        })
+      }
+    },
+    [dialogMap, topic, dispatch, t]
+  )
+
   // 构建对话地图数据结构
   const buildDialogMapFlowData = useCallback(() => {
     if (!dialogMap) return { nodes: [], edges: [] }
@@ -688,7 +749,8 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
           model: node.model?.name || t('dialogMap.unknown_model'),
           modelInfo: node.model,
           onNodeClick: handleNodeClick,
-          onAddBranch: handleAddBranch
+          onAddBranch: handleAddBranch,
+          onDeleteNode: handleDeleteNode
         },
         position: { x, y },
         sourcePosition: Position.Bottom,
@@ -725,7 +787,7 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
     })
 
     return { nodes: flowNodes, edges: flowEdges }
-  }, [dialogMap, handleNodeClick, handleAddBranch, t])
+  }, [dialogMap, handleNodeClick, handleAddBranch, handleDeleteNode, t])
 
   // 当对话地图数据变化时，更新流程图
   useEffect(() => {
