@@ -147,6 +147,24 @@ export const findPathNodes = (dialogMap: DialogMap, nodeIds: string[]): string[]
 }
 
 /**
+ * 递归调整子节点的位置
+ */
+export const adjustChildNodesPosition = (
+  dialogMap: DialogMap,
+  nodePositions: Record<string, DialogMapNodePosition>,
+  nodeId: string,
+  offsetX: number
+): void => {
+  const childIds = dialogMap.nodes[nodeId]?.children || []
+  childIds.forEach((childId) => {
+    if (nodePositions[childId]) {
+      nodePositions[childId].x += offsetX
+      adjustChildNodesPosition(dialogMap, nodePositions, childId, offsetX)
+    }
+  })
+}
+
+/**
  * 构建对话地图的流程图数据
  */
 export const buildDialogMapFlowData = (
@@ -286,17 +304,7 @@ export const buildDialogMapFlowData = (
           currentPos.x += adjustment
 
           // 同时递归调整当前节点的所有子节点
-          const adjustChildNodes = (nodeId: string, offsetX: number) => {
-            const childIds = dialogMap.nodes[nodeId]?.children || []
-            childIds.forEach((childId) => {
-              if (nodePositions[childId]) {
-                nodePositions[childId].x += offsetX
-                adjustChildNodes(childId, offsetX)
-              }
-            })
-          }
-
-          adjustChildNodes(currentNodeId, adjustment)
+          adjustChildNodesPosition(dialogMap, nodePositions, currentNodeId, adjustment)
         }
       }
 
@@ -313,17 +321,7 @@ export const buildDialogMapFlowData = (
           nodePositions[nodeId].x += offsetX
 
           // 同时调整所有子节点
-          const adjustChildNodes = (nodeId: string, offsetX: number) => {
-            const childIds = dialogMap.nodes[nodeId]?.children || []
-            childIds.forEach((childId) => {
-              if (nodePositions[childId]) {
-                nodePositions[childId].x += offsetX
-                adjustChildNodes(childId, offsetX)
-              }
-            })
-          }
-
-          adjustChildNodes(nodeId, offsetX)
+          adjustChildNodesPosition(dialogMap, nodePositions, nodeId, offsetX)
         })
       }
     })
