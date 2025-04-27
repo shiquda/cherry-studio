@@ -162,6 +162,8 @@ const DialogMapNode: FC<{ data: any }> = ({ data }) => {
           $isSelected={isSelected}>
           <Handle type="target" position={Position.Top} style={handleStyle} isConnectable={false} />
           <Handle type="target" position={Position.Left} style={handleStyle} isConnectable={false} />
+          <Handle type="target" position={Position.Right} style={handleStyle} isConnectable={false} />
+          <Handle type="target" position={Position.Bottom} style={handleStyle} isConnectable={false} />
 
           <NodeHeader>
             <NodeAvatar>{avatar}</NodeAvatar>
@@ -176,6 +178,8 @@ const DialogMapNode: FC<{ data: any }> = ({ data }) => {
 
           <Handle type="source" position={Position.Bottom} style={handleStyle} isConnectable={false} />
           <Handle type="source" position={Position.Right} style={handleStyle} isConnectable={false} />
+          <Handle type="source" position={Position.Left} style={handleStyle} isConnectable={false} />
+          <Handle type="source" position={Position.Top} style={handleStyle} isConnectable={false} />
         </CustomNodeContainer>
       </Dropdown>
     </Tooltip>
@@ -194,21 +198,23 @@ interface DialogMapProps {
 const commonEdgeStyle = {
   stroke: 'var(--color-border-dark, #666)',
   strokeWidth: 3,
-  strokeDasharray: '5,3'
+  strokeDasharray: '5,3',
+  transition: '0.3s ease-in-out'
 }
 
 // 选中路径的边样式
 const selectedEdgeStyle = {
   stroke: 'var(--color-primary)',
   strokeWidth: 4,
-  strokeDasharray: 'none'
+  strokeDasharray: 'none',
+  transition: '0.3s ease-in-out'
 }
 
 // 统一的边配置
 const defaultEdgeOptions = {
   animated: true,
   style: commonEdgeStyle,
-  type: 'smoothstep',
+  type: 'bezier',
   zIndex: 5
 }
 
@@ -553,11 +559,12 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
     const flowEdges: Edge[] = []
 
     // 节点布局参数 - 垂直布局
-    const verticalGap = 150 // 减小垂直间距
+    const verticalGap = 220 // 增加垂直间距
     const horizontalGap = 360 // 水平间距
     const initialX = 400 // 初始X位置（居中）
     const initialY = 100 // 初始Y位置
     const maxNodesPerLevel = 4 // 每层最大节点数
+    const alternatingOffset = 0.8 // 控制子节点交替偏移的程度
 
     // 节点尺寸参数（用于碰撞检测）
     const NODE_WIDTH = 240 // 节点宽度
@@ -637,13 +644,22 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
           const siblingIndex = dialogMap.nodes[node.parentId].children.indexOf(nodeId)
           const siblingCount = dialogMap.nodes[node.parentId].children.length
 
-          // 计算X位置偏移，使子节点围绕父节点均匀分布
+          // 改进的X位置计算，使子节点更好地围绕父节点分布
           let xOffset = 0
           if (siblingCount > 1) {
-            // 根据层级调整间距，确保子节点不会重叠
+            // 为子节点创建更均匀的左右分布
+            // 偶数索引的子节点放在右侧，奇数索引的子节点放在左侧
+            const direction = siblingIndex % 2 === 0 ? 1 : -1 // 决定子节点在父节点的左侧还是右侧
+            const magnitude = Math.floor((siblingIndex + 1) / 2) // 计算偏移量的大小
             const minOffset = NODE_WIDTH + NODE_MARGIN // 最小偏移确保不重叠
-            const spreadFactor = Math.max(siblingCount / 2, 1) // 扩散因子
-            xOffset = (siblingIndex - (siblingCount - 1) / 2) * minOffset * spreadFactor
+
+            // 计算实际X偏移
+            xOffset = direction * magnitude * minOffset * alternatingOffset
+
+            // 如果子节点数量为奇数，确保第一个节点位置居中
+            if (siblingCount % 2 === 1 && siblingIndex === 0) {
+              xOffset = 0
+            }
           }
 
           // 确保节点不会超出可视区域
@@ -752,9 +768,7 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
           onAddBranch: handleAddBranch,
           onDeleteNode: handleDeleteNode
         },
-        position: { x, y },
-        sourcePosition: Position.Bottom,
-        targetPosition: Position.Top
+        position: { x, y }
       })
 
       // 创建与子节点的连接
@@ -762,12 +776,45 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
         // 检查是否为选中路径上的连接
         const isSelected = node.isSelected && dialogMap.nodes[childId].isSelected
 
+        // 计算子节点位置与父节点的相对位置，以确定最佳连接点
+        const childPosition = nodePositions[childId]
+        const parentPosition = nodePositions[nodeId]
+
+        // 默认连接类型
+        let sourcePosition = Position.Bottom
+        let targetPosition = Position.Top
+
+        // 根据相对位置调整连接点
+        if (childPosition && parentPosition) {
+          const dx = childPosition.x - parentPosition.x
+
+          // 如果子节点明显在父节点左侧，使用左右连接
+          if (dx < -NODE_WIDTH / 2) {
+            sourcePosition = Position.Left
+            targetPosition = Position.Right
+          }
+          // 如果子节点明显在父节点右侧，使用右左连接
+          else if (dx > NODE_WIDTH / 2) {
+            sourcePosition = Position.Right
+            targetPosition = Position.Left
+          }
+          // 否则保持默认的上下连接
+        }
+
         flowEdges.push({
           id: `edge-${nodeId}-to-${childId}`,
           source: nodeId,
           target: childId,
+          sourceHandle: null,
+          targetHandle: null,
+          data: {
+            sourcePosition,
+            targetPosition,
+            isHorizontal:
+              childPosition && parentPosition && Math.abs(childPosition.x - parentPosition.x) > NODE_WIDTH / 2
+          },
           animated: isSelected,
-          type: 'smoothstep',
+          type: 'bezier',
           style: isSelected ? selectedEdgeStyle : commonEdgeStyle,
           markerEnd: isSelected
             ? {
@@ -835,9 +882,9 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
               defaultEdgeOptions={defaultEdgeOptions}
               fitView={true}
               fitViewOptions={{
-                padding: 0.3,
+                padding: 0.4,
                 includeHiddenNodes: false,
-                minZoom: 0.4,
+                minZoom: 0.3,
                 maxZoom: 2
               }}
               proOptions={{ hideAttribution: true }}
