@@ -68,14 +68,4 @@ db.version(7).stores({
   dialogMaps: '&id, topicId, rootNodeId, createdAt, updatedAt'
 })
 
-db.version(8).stores({
-  files: 'id, name, origin_name, path, size, ext, type, created_at, count',
-  topics: '&id, messages',
-  settings: '&id, value',
-  knowledge_notes: '&id, baseId, type, content, created_at, updated_at',
-  translate_history: '&id, sourceText, targetText, sourceLanguage, targetLanguage, createdAt',
-  quick_phrases: 'id',
-  dialogMaps: '&id, topicId, rootNodeId, createdAt, updatedAt'
-})
-
 export default db
