@@ -170,7 +170,8 @@ const DialogMapNode: FC<{ data: any }> = ({ data }) => {
             boxShadow: `0 4px 10px rgba(0, 0, 0, 0.1), 0 0 0 2px ${borderColor}40`
           }}
           onClick={handleNodeClick}
-          $isSelected={isSelected}>
+          $isSelected={isSelected}
+          $borderColor={borderColor}>
           <Handle type="target" position={Position.Top} style={handleStyle} isConnectable={false} />
           <Handle type="target" position={Position.Left} style={handleStyle} isConnectable={false} />
           <Handle type="target" position={Position.Right} style={handleStyle} isConnectable={false} />
@@ -599,6 +600,7 @@ const ActionButtons = styled.div`
 
 interface CustomNodeContainerProps {
   $isSelected: boolean
+  $borderColor: string
 }
 
 const CustomNodeContainer = styled.div<CustomNodeContainerProps>`
@@ -625,7 +627,7 @@ const CustomNodeContainer = styled.div<CustomNodeContainerProps>`
     transform: translateY(-2px);
     box-shadow:
       0 6px 10px var(--color-border-soft),
-      0 0 0 2px ${(props) => props.style?.borderColor || 'var(--color-border)'}80 !important;
+      0 0 0 2px ${(props) => props.$borderColor || 'var(--color-border)'}80 !important;
     filter: brightness(1.02);
   }
 
