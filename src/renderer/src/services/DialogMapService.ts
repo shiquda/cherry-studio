@@ -1,6 +1,7 @@
 import db from '@renderer/databases'
 import { DialogMap, DialogMapNode, Message } from '@renderer/types'
 import { uuid } from '@renderer/utils'
+import { buildFullPath, findAncestors, findPathNodes } from '@renderer/utils/dialogMapUtils'
 
 /**
  * 对话地图服务
@@ -448,6 +449,133 @@ class DialogMapService {
     await db.dialogMaps.put(dialogMap)
 
     return dialogMap
+  }
+
+  /**
+   * 获取指定节点的完整路径（祖先+子孙）
+   * @param dialogMapId 对话地图ID
+   * @param nodeId 节点ID
+   * @returns 完整路径（节点ID数组）
+   */
+  async getNodeFullPath(dialogMapId: string, nodeId: string): Promise<string[]> {
+    const dialogMap = await db.dialogMaps.get(dialogMapId)
+    if (!dialogMap) {
+      throw new Error(`DialogMap with id ${dialogMapId} not found`)
+    }
+
+    return buildFullPath(dialogMap, nodeId)
+  }
+
+  /**
+   * 获取节点的祖先路径
+   * @param dialogMapId 对话地图ID
+   * @param nodeId 节点ID
+   * @returns 祖先路径（节点ID数组，从根节点到指定节点）
+   */
+  async getNodeAncestors(dialogMapId: string, nodeId: string): Promise<string[]> {
+    const dialogMap = await db.dialogMaps.get(dialogMapId)
+    if (!dialogMap) {
+      throw new Error(`DialogMap with id ${dialogMapId} not found`)
+    }
+
+    return findAncestors(dialogMap, nodeId)
+  }
+
+  /**
+   * 查找并应用最佳路径
+   * @param dialogMapId 对话地图ID
+   * @param selectedNodeIds 当前选中的节点ID数组
+   * @returns 更新后的对话地图
+   */
+  async findAndApplyOptimalPath(dialogMapId: string, selectedNodeIds: string[]): Promise<DialogMap> {
+    const dialogMap = await db.dialogMaps.get(dialogMapId)
+    if (!dialogMap) {
+      throw new Error(`DialogMap with id ${dialogMapId} not found`)
+    }
+
+    // 查找选中节点的最佳路径
+    const optimalPath = findPathNodes(dialogMap, selectedNodeIds)
+
+    // 应用路径
+    dialogMap.selectedPath = optimalPath
+    dialogMap.updatedAt = new Date().toISOString()
+
+    // 更新节点选中状态
+    Object.keys(dialogMap.nodes).forEach((nodeId) => {
+      dialogMap.nodes[nodeId].isSelected = optimalPath.includes(nodeId)
+    })
+
+    await db.dialogMaps.put(dialogMap)
+
+    return dialogMap
+  }
+
+  /**
+   * 通知节点分支创建
+   * @param dialogMapId 对话地图ID
+   * @param nodeId 基于哪个节点创建新分支
+   * @param topic 当前主题
+   * @returns 处理后的完整祖先路径
+   */
+  async notifyBranchCreation(dialogMapId: string, nodeId: string): Promise<string[]> {
+    const dialogMap = await db.dialogMaps.get(dialogMapId)
+    if (!dialogMap) {
+      throw new Error(`DialogMap with id ${dialogMapId} not found`)
+    }
+
+    // 获取到节点的祖先路径
+    const ancestors = findAncestors(dialogMap, nodeId)
+
+    // 更新选中路径
+    await this.setSelectedPath(dialogMap.id, ancestors)
+
+    return ancestors
+  }
+
+  /**
+   * 处理路径变更并生成消息
+   * @param dialogMapId 对话地图ID
+   * @param path 新路径
+   * @returns 生成的消息数组
+   */
+  async processPathChangeAndGenerateMessages(dialogMapId: string, path: string[]): Promise<Message[]> {
+    const dialogMap = await db.dialogMaps.get(dialogMapId)
+    if (!dialogMap) {
+      throw new Error(`DialogMap with id ${dialogMapId} not found`)
+    }
+
+    // 设置新的选中路径
+    await this.setSelectedPath(dialogMapId, path)
+
+    // 生成消息
+    return this.generateMessagesFromPath(dialogMap, path)
+  }
+
+  /**
+   * 创建一个新的默认选择路径
+   * @param dialogMapId 对话地图ID
+   * @returns 默认路径（节点ID数组）
+   */
+  async createDefaultPath(dialogMapId: string): Promise<string[]> {
+    const dialogMap = await db.dialogMaps.get(dialogMapId)
+    if (!dialogMap) {
+      throw new Error(`DialogMap with id ${dialogMapId} not found`)
+    }
+
+    // 构建从根节点到某个叶子节点的路径
+    const buildDefaultPath = (id: string, path: string[] = []): string[] => {
+      path.push(id)
+      const node = dialogMap.nodes[id]
+      if (node && node.children.length > 0) {
+        return buildDefaultPath(node.children[0], path)
+      }
+      return path
+    }
+
+    const defaultPath = buildDefaultPath(dialogMap.rootNodeId)
+    await this.setSelectedPath(dialogMapId, defaultPath)
+
+    return defaultPath
   }
 }
 

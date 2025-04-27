@@ -3,7 +3,7 @@ import { RootState } from '@renderer/store'
 import { selectCurrentTopicId } from '@renderer/store/messages'
 import { Topic } from '@renderer/types'
 import { Drawer, Tooltip } from 'antd'
-import { GitBranch } from 'lucide-react'
+import { GitFork } from 'lucide-react'
 import { FC, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSelector } from 'react-redux'
@@ -40,7 +40,7 @@ const DialogMapButton: FC = () => {
     <>
       <Tooltip title={t('dialogMap.title')} mouseEnterDelay={0.8}>
         <DialogMapIcon onClick={openDialogMap}>
-          <GitBranch size={18} />
+          <GitFork size={18} />
         </DialogMapIcon>
       </Tooltip>
 
