@@ -1,21 +1,21 @@
 import '@xyflow/react/dist/style.css'
 
-import { RobotOutlined, UserOutlined, PlusOutlined } from '@ant-design/icons'
+import { PlusOutlined, RobotOutlined, UserOutlined } from '@ant-design/icons'
 import ModelAvatar from '@renderer/components/Avatar/ModelAvatar'
 import { getModelLogo } from '@renderer/config/models'
 import { useTheme } from '@renderer/context/ThemeProvider'
+import db from '@renderer/databases'
 import DialogMapService from '@renderer/services/DialogMapService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { useAppDispatch } from '@renderer/store'
 import { updateMessages } from '@renderer/store/messages'
 import type { DialogMap as DialogMapType, DialogMapNode as DialogMapNodeType, Topic } from '@renderer/types'
 import { Controls, Handle, MiniMap, ReactFlow, ReactFlowProvider } from '@xyflow/react'
-import { Edge, Node, NodeTypes, Position, useEdgesState, useNodesState } from '@xyflow/react'
+import { Edge, MarkerType, Node, NodeTypes, Position, useEdgesState, useNodesState } from '@xyflow/react'
 import { Avatar, Button, Empty, Spin, Tooltip } from 'antd'
-import { FC, memo, useCallback, useEffect, useState, useRef } from 'react'
+import { FC, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
-import db from '@renderer/databases'
 
 // 定义Tooltip相关样式组件
 const TooltipContent = styled.div`
@@ -55,21 +55,21 @@ const DialogMapNode: FC<{ data: any }> = ({ data }) => {
 
   // 根据消息类型设置不同的样式和图标
   if (nodeType === 'user') {
-    borderColor = isSelected ? '#52c41a' : '#1890ff' // 用户节点颜色
-    backgroundColor = isSelected ? 'rgba(82, 196, 26, 0.1)' : 'rgba(24, 144, 255, 0.1)'
-    gradientColor = isSelected ? 'rgba(82, 196, 26, 0.2)' : 'rgba(24, 144, 255, 0.2)'
+    borderColor = isSelected ? 'var(--color-primary)' : 'var(--color-link)' // 用户节点颜色
+    backgroundColor = isSelected ? 'var(--color-primary-mute)' : 'var(--color-link-soft)'
+    gradientColor = isSelected ? 'var(--color-primary-soft)' : 'var(--color-link-mute)'
     title = data.userName || t('chat.history.user_node')
 
     // 用户头像
     if (data.userAvatar) {
       avatar = <Avatar src={data.userAvatar} alt={title} />
     } else {
-      avatar = <Avatar icon={<UserOutlined />} style={{ backgroundColor: '#1890ff' }} />
+      avatar = <Avatar icon={<UserOutlined />} style={{ backgroundColor: 'var(--color-link)' }} />
     }
   } else if (nodeType === 'assistant') {
-    borderColor = isSelected ? '#52c41a' : '#722ed1' // 助手节点颜色
-    backgroundColor = isSelected ? 'rgba(82, 196, 26, 0.1)' : 'rgba(114, 46, 209, 0.1)'
-    gradientColor = isSelected ? 'rgba(82, 196, 26, 0.2)' : 'rgba(114, 46, 209, 0.2)'
+    borderColor = isSelected ? 'var(--color-primary)' : 'var(--color-black-mute)' // 助手节点颜色
+    backgroundColor = isSelected ? 'var(--color-primary-mute)' : 'var(--color-black-soft)'
+    gradientColor = isSelected ? 'var(--color-primary-soft)' : 'var(--color-black-mute-soft)'
     title = `${data.model || t('chat.history.assistant_node')}`
 
     // 模型头像
@@ -81,11 +81,11 @@ const DialogMapNode: FC<{ data: any }> = ({ data }) => {
         <Avatar
           src={modelLogo}
           icon={!modelLogo ? <RobotOutlined /> : undefined}
-          style={{ backgroundColor: '#722ed1' }}
+          style={{ backgroundColor: 'var(--color-black-mute)' }}
         />
       )
     } else {
-      avatar = <Avatar icon={<RobotOutlined />} style={{ backgroundColor: '#722ed1' }} />
+      avatar = <Avatar icon={<RobotOutlined />} style={{ backgroundColor: 'var(--color-black-mute)' }} />
     }
   }
 
@@ -166,8 +166,16 @@ interface DialogMapProps {
 
 // 统一的边样式
 const commonEdgeStyle = {
-  stroke: 'var(--color-border)',
-  strokeWidth: 2
+  stroke: 'var(--color-border-dark, #666)',
+  strokeWidth: 3,
+  strokeDasharray: '5,3'
+}
+
+// 选中路径的边样式
+const selectedEdgeStyle = {
+  stroke: 'var(--color-primary)',
+  strokeWidth: 4,
+  strokeDasharray: 'none'
 }
 
 // 统一的边配置
@@ -175,7 +183,6 @@ const defaultEdgeOptions = {
   animated: true,
   style: commonEdgeStyle,
   type: 'smoothstep',
-  markerEnd: undefined,
   zIndex: 5
 }
 
@@ -485,10 +492,15 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
     const flowEdges: Edge[] = []
 
     // 节点布局参数 - 垂直布局
-    const verticalGap = 160 // 垂直间距
-    const horizontalGap = 300 // 水平间距（用于分支）
+    const verticalGap = 150 // 减小垂直间距
+    const horizontalGap = 360 // 水平间距
     const initialX = 400 // 初始X位置（居中）
     const initialY = 100 // 初始Y位置
+    const maxNodesPerLevel = 4 // 每层最大节点数
+
+    // 节点尺寸参数（用于碰撞检测）
+    const NODE_WIDTH = 240 // 节点宽度
+    const NODE_MARGIN = 40 // 节点之间的最小间距
 
     // 先计算每个节点的层级（深度）
     const nodeLevels: Record<string, number> = {}
@@ -528,6 +540,7 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
     // 计算节点的X坐标，使同一层级的节点水平排列，但主要分支保持在中央
     const nodePositions: Record<string, { x: number; y: number }> = {}
 
+    // 第一遍：按照树形结构分配初始位置
     // 逐层计算节点位置，从上到下
     Object.keys(nodesByLevel)
       .sort((a, b) => Number(a) - Number(b))
@@ -566,16 +579,94 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
           // 计算X位置偏移，使子节点围绕父节点均匀分布
           let xOffset = 0
           if (siblingCount > 1) {
-            // 奇数个子节点时，中间的子节点与父节点对齐
-            // 偶数个子节点时，从父节点左侧开始排列
-            xOffset = (siblingIndex - (siblingCount - 1) / 2) * horizontalGap
+            // 根据层级调整间距，确保子节点不会重叠
+            const minOffset = NODE_WIDTH + NODE_MARGIN // 最小偏移确保不重叠
+            const spreadFactor = Math.max(siblingCount / 2, 1) // 扩散因子
+            xOffset = (siblingIndex - (siblingCount - 1) / 2) * minOffset * spreadFactor
           }
 
+          // 确保节点不会超出可视区域
+          const maxX = initialX + (maxNodesPerLevel * (NODE_WIDTH + NODE_MARGIN)) / 2
+          const minX = initialX - (maxNodesPerLevel * (NODE_WIDTH + NODE_MARGIN)) / 2
+          const xPos = Math.min(Math.max(parentX + xOffset, minX), maxX)
+
           nodePositions[nodeId] = {
-            x: parentX + xOffset,
+            x: xPos,
             y: yPos
           }
         })
+      })
+
+    // 第二遍：检测并解决节点重叠问题
+    // 逐层调整节点位置
+    Object.keys(nodesByLevel)
+      .sort((a, b) => Number(a) - Number(b))
+      .forEach((levelStr) => {
+        const level = parseInt(levelStr, 10)
+        const nodesInLevel = nodesByLevel[level]
+
+        if (nodesInLevel.length <= 1) return // 只有一个节点不需要调整
+
+        // 按X坐标排序节点
+        const sortedNodes = [...nodesInLevel].sort((a, b) => nodePositions[a].x - nodePositions[b].x)
+
+        // 检测并修复重叠
+        for (let i = 1; i < sortedNodes.length; i++) {
+          const currentNodeId = sortedNodes[i]
+          const prevNodeId = sortedNodes[i - 1]
+          const currentPos = nodePositions[currentNodeId]
+          const prevPos = nodePositions[prevNodeId]
+
+          // 计算当前节点左边缘与前一个节点右边缘之间的距离
+          const distance = currentPos.x - prevPos.x
+          const minRequiredDistance = NODE_WIDTH + NODE_MARGIN
+
+          // 如果距离小于所需最小距离，向右移动当前节点
+          if (distance < minRequiredDistance) {
+            const adjustment = minRequiredDistance - distance
+            currentPos.x += adjustment
+
+            // 同时递归调整当前节点的所有子节点
+            const adjustChildNodes = (nodeId: string, offsetX: number) => {
+              const childIds = dialogMap.nodes[nodeId]?.children || []
+              childIds.forEach((childId) => {
+                if (nodePositions[childId]) {
+                  nodePositions[childId].x += offsetX
+                  adjustChildNodes(childId, offsetX)
+                }
+              })
+            }
+
+            adjustChildNodes(currentNodeId, adjustment)
+          }
+        }
+
+        // 计算本层节点的中心位置
+        const leftmostX = nodePositions[sortedNodes[0]].x
+        const rightmostX = nodePositions[sortedNodes[sortedNodes.length - 1]].x
+        const layerCenter = (leftmostX + rightmostX) / 2
+        const desiredCenter = initialX
+
+        // 如果层的中心与期望中心不同，整体移动该层所有节点及其子节点
+        if (Math.abs(layerCenter - desiredCenter) > 10) {
+          const offsetX = desiredCenter - layerCenter
+          sortedNodes.forEach((nodeId) => {
+            nodePositions[nodeId].x += offsetX
+
+            // 同时调整所有子节点
+            const adjustChildNodes = (nodeId: string, offsetX: number) => {
+              const childIds = dialogMap.nodes[nodeId]?.children || []
+              childIds.forEach((childId) => {
+                if (nodePositions[childId]) {
+                  nodePositions[childId].x += offsetX
+                  adjustChildNodes(childId, offsetX)
+                }
+              })
+            }
+
+            adjustChildNodes(nodeId, offsetX)
+          })
+        }
       })
 
     // 创建节点
@@ -606,12 +697,29 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
 
       // 创建与子节点的连接
       node.children.forEach((childId) => {
+        // 检查是否为选中路径上的连接
+        const isSelected = node.isSelected && dialogMap.nodes[childId].isSelected
+
         flowEdges.push({
           id: `edge-${nodeId}-to-${childId}`,
           source: nodeId,
           target: childId,
-          animated: false,
-          type: 'smoothstep'
+          animated: isSelected,
+          type: 'smoothstep',
+          style: isSelected ? selectedEdgeStyle : commonEdgeStyle,
+          markerEnd: isSelected
+            ? {
+                type: MarkerType.ArrowClosed,
+                width: 12,
+                height: 12,
+                color: 'var(--color-primary)'
+              }
+            : {
+                type: MarkerType.Arrow,
+                width: 12,
+                height: 12,
+                color: 'var(--color-border-dark, #666)'
+              }
         })
       })
     })
@@ -679,8 +787,8 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
                 zoomable
                 pannable
                 nodeColor={(node) => {
-                  if (node.data.isSelected) return 'var(--color-success)'
-                  return node.data.type === 'user' ? 'var(--color-info)' : 'var(--color-primary)'
+                  if (node.data.isSelected) return 'var(--color-primary)'
+                  return node.data.type === 'user' ? 'var(--color-link)' : 'var(--color-black-mute)'
                 }}
               />
             </ReactFlow>
@@ -760,30 +868,31 @@ const CustomNodeContainer = styled.div<CustomNodeContainerProps>`
   ${(props) =>
     props.$isSelected &&
     `
-    box-shadow: 0 0 0 3px rgba(82, 196, 26, 0.4) !important;
+    box-shadow: 0 0 0 3px var(--color-primary-soft) !important;
     transform: scale(1.02);
   `}
 
   &:hover {
     transform: translateY(-2px);
     box-shadow:
-      0 6px 10px rgba(0, 0, 0, 0.1),
-      0 0 0 2px ${(props) => props.style?.borderColor || '#d9d9d9'}80 !important;
+      0 6px 10px var(--color-border-soft),
+      0 0 0 2px ${(props) => props.style?.borderColor || 'var(--color-border)'}80 !important;
     filter: brightness(1.02);
   }
 
   /* 添加点击动画效果 */
   &:active {
     transform: scale(0.98);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 2px 4px var(--color-border-soft);
     transition: all 0.1s ease;
   }
 `
 
+// 定义节点组件样式
 const NodeHeader = styled.div`
   font-weight: bold;
   margin-bottom: 8px;
-  padding-bottom: 6px;
+  padding-bottom: 8px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.2);
   color: var(--color-text);
   display: flex;
@@ -807,7 +916,7 @@ const NodeAvatar = styled.span`
 
 const NodeTitle = styled.span`
   flex: 1;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: bold;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -821,36 +930,30 @@ const NodeContent = styled.div`
   overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   line-height: 1.5;
   word-break: break-word;
-  font-size: 13px;
+  font-size: 14px;
   padding: 3px;
 `
 
-// 添加分支按钮样式
-const AddBranchButton = styled(Button)`
-  width: 24px;
-  height: 24px;
-  padding: 0;
+const AddBranchButton = styled.button`
+  border: none;
+  background: transparent;
+  color: var(--color-text-secondary);
+  padding: 3px;
+  border-radius: 4px;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
-  background-color: rgba(0, 0, 0, 0.05);
-  border: none;
-  color: var(--color-text);
-  transition: all 0.2s ease-in-out;
+  transition: all 0.2s ease;
 
   &:hover {
-    background-color: rgba(0, 0, 0, 0.1);
     color: var(--color-primary);
-  }
-
-  &:active {
-    transform: scale(0.95);
+    background-color: var(--color-primary-soft);
   }
 `
 
-export default memo(DialogMap)
+export default DialogMap
