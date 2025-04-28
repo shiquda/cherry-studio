@@ -430,7 +430,7 @@ const Topics: FC<Props> = ({ assistant: _assistant, activeTopic, setActiveTopic 
 
   return (
     <Container right={topicPosition === 'right'} className="topics-tab">
-      <div ref={containerRef} onScroll={handleScroll} style={{ height: '100%', overflow: 'auto' }}>
+      <div ref={containerRef} onScroll={handleScroll} style={{ height: '100%', overflow: 'auto', overflowX: 'hidden' }}>
         <DragableList list={displayedTopics} onUpdate={handleDragUpdate}>
           {(topic) => {
             const isActive = topic.id === activeTopic?.id
