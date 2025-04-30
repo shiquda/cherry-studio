@@ -406,7 +406,7 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
               nodesDraggable={false}
               nodesConnectable={false}
               edgesFocusable={true}
-              zoomOnDoubleClick={true}
+              zoomOnDoubleClick={false}
               preventScrolling={true}
               elementsSelectable={true}
               selectNodesOnDrag={false}
