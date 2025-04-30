@@ -657,7 +657,7 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
               selectNodesOnDrag={false}
               nodesFocusable={true}
               zoomOnScroll={true}
-              panOnScroll={false}
+              panOnScroll={true}
               minZoom={0.4}
               maxZoom={2}
               defaultEdgeOptions={defaultEdgeOptions}
