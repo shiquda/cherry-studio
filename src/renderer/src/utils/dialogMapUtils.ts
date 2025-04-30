@@ -165,6 +165,28 @@ export const adjustChildNodesPosition = (
 }
 
 /**
+ * 计算节点的所有子孙节点数量
+ */
+export const calculateDescendantsCount = (
+  dialogMap: DialogMap,
+  nodeId: string,
+  collapsedNodes: Set<string> = new Set()
+): number => {
+  const node = dialogMap.nodes[nodeId]
+  if (!node) return 0
+
+  let count = 0
+  for (const childId of node.children) {
+    count += 1 // 计算直接子节点
+    if (!collapsedNodes.has(childId)) {
+      // 如果节点没有被折叠，继续递归计算其子节点
+      count += calculateDescendantsCount(dialogMap, childId, collapsedNodes)
+    }
+  }
+  return count
+}
+
+/**
  * 构建对话地图的流程图数据
  */
 export const buildDialogMapFlowData = (
@@ -173,7 +195,9 @@ export const buildDialogMapFlowData = (
   handleNodeClick: (nodeId: string) => void,
   handleAddBranch: (nodeId: string) => void,
   handleDeleteNode: (nodeId: string) => void,
-  handleNavigateToNode: (nodeId: string) => void
+  handleNavigateToNode: (nodeId: string) => void,
+  collapsedNodes: Set<string> = new Set(),
+  handleToggleCollapse: (nodeId: string, isCollapsed: boolean) => void
 ): { nodes: Node[]; edges: Edge[] } => {
   if (!dialogMap) return { nodes: [], edges: [] }
 
@@ -182,16 +206,16 @@ export const buildDialogMapFlowData = (
   const flowEdges: Edge[] = []
 
   // 节点布局参数 - 垂直布局
-  const verticalGap = 220 // 增加垂直间距
-  const horizontalGap = 360 // 水平间距
+  const verticalGap = 120 // 垂直间距
+  const horizontalGap = 380 // 水平间距，从280增加到380
   const initialX = 400 // 初始X位置（居中）
-  const initialY = 100 // 初始Y位置
-  const maxNodesPerLevel = 4 // 每层最大节点数
-  const alternatingOffset = 0.8 // 控制子节点交替偏移的程度
+  const initialY = 80 // 初始Y位置
+  const maxNodesPerLevel = 5 // 每层最大节点数
+  const alternatingOffset = 0.85 // 控制子节点交替偏移的程度
 
   // 节点尺寸参数（用于碰撞检测）
   const NODE_WIDTH = 240 // 节点宽度
-  const NODE_MARGIN = 40 // 节点之间的最小间距
+  const NODE_MARGIN = 60 // 节点之间的最小间距
 
   // 先计算每个节点的层级（深度）
   const nodeLevels = calculateNodeLevels(dialogMap.nodes)
@@ -203,6 +227,29 @@ export const buildDialogMapFlowData = (
       nodesByLevel[level] = []
     }
     nodesByLevel[level].push(nodeId)
+  })
+
+  // 合并节点的映射表 - 存储哪些用户节点和AI节点应当被组合在一起
+  const combinedNodes: Record<string, { userId: string; assistantId: string }> = {}
+
+  // 跟踪哪些节点会被合并处理
+  const nodesToSkip = new Set<string>()
+
+  // 找出用户提问和助手回答的配对
+  Object.values(dialogMap.nodes).forEach((node) => {
+    if (node.role === 'assistant' && node.parentId) {
+      const parentNode = dialogMap.nodes[node.parentId]
+      if (parentNode && parentNode.role === 'user') {
+        // 记录这个组合
+        combinedNodes[node.id] = {
+          userId: parentNode.id,
+          assistantId: node.id
+        }
+
+        // 标记用户节点为需要跳过的节点（因为它会合并到助手节点中）
+        nodesToSkip.add(parentNode.id)
+      }
+    }
   })
 
   // 计算节点的X坐标，使同一层级的节点水平排列，但主要分支保持在中央
@@ -235,6 +282,19 @@ export const buildDialogMapFlowData = (
           const xPos = initialX + (index - nodesInLevel.length / 2) * horizontalGap
           nodePositions[nodeId] = { x: xPos, y: yPos }
           return
+        }
+
+        // 对于合并节点，使用特殊的处理逻辑
+        if (node.role === 'assistant' && combinedNodes[nodeId]) {
+          const userNodeId = combinedNodes[nodeId].userId
+          const userParentId = dialogMap.nodes[userNodeId]?.parentId
+
+          // 如果用户节点的父节点与AI节点的父节点不同，则根据用户节点的位置计算
+          if (userParentId && userParentId !== node.parentId && nodePositions[userParentId]) {
+            const userParentX = nodePositions[userParentId]?.x
+            nodePositions[nodeId] = { x: userParentX, y: yPos }
+            return
+          }
         }
 
         // 获取父节点的X坐标
@@ -329,25 +389,59 @@ export const buildDialogMapFlowData = (
   // 统一的边样式
   const commonEdgeStyle = {
     stroke: 'var(--color-border-dark, #666)',
-    strokeWidth: 3,
-    strokeDasharray: '5,3',
+    strokeWidth: 2, // 减小线条宽度，原值3
+    strokeDasharray: '4,3', // 调整虚线样式，原值5,3
     transition: '0.3s ease-in-out'
   }
 
   // 选中路径的边样式
   const selectedEdgeStyle = {
     stroke: 'var(--color-primary)',
-    strokeWidth: 4,
+    strokeWidth: 3, // 减小线条宽度，原值4
     strokeDasharray: 'none',
     transition: '0.3s ease-in-out'
   }
 
   // 创建节点
   Object.entries(dialogMap.nodes).forEach(([nodeId, node]) => {
+    // 跳过已经被合并到其他节点的用户节点
+    if (nodesToSkip.has(nodeId)) return
+
     if (!nodePositions[nodeId]) return
+
+    // 如果当前节点的任何祖先节点被折叠，则跳过创建该节点
+    let shouldSkip = false
+    let currentParentId = node.parentId
+    while (currentParentId) {
+      if (collapsedNodes.has(currentParentId)) {
+        shouldSkip = true
+        break
+      }
+      currentParentId = dialogMap.nodes[currentParentId]?.parentId
+    }
+    if (shouldSkip) return
 
     const { x, y } = nodePositions[nodeId]
     const isSelected = node.isSelected
+
+    // 检查是否需要合并用户节点和AI节点
+    let isCombinedNode = false
+    let combinedData: any = {}
+
+    if (node.role === 'assistant' && combinedNodes[nodeId]) {
+      const userNodeId = combinedNodes[nodeId].userId
+      const userNode = dialogMap.nodes[userNodeId]
+
+      if (userNode) {
+        isCombinedNode = true
+        combinedData = {
+          userContent: userNode.content
+        }
+      }
+    }
+
+    // 计算子节点数量
+    const childrenCount = calculateDescendantsCount(dialogMap, nodeId, collapsedNodes)
 
     flowNodes.push({
       id: nodeId,
@@ -364,13 +458,99 @@ export const buildDialogMapFlowData = (
         onNodeClick: handleNodeClick,
         onAddBranch: handleAddBranch,
         onDeleteNode: handleDeleteNode,
-        onNavigateToNode: handleNavigateToNode
+        onNavigateToNode: handleNavigateToNode,
+        childrenCount,
+        isCollapsed: collapsedNodes.has(nodeId),
+        onToggleCollapse: handleToggleCollapse,
+        // 添加合并节点的信息
+        ...(isCombinedNode ? combinedData : {})
       },
       position: { x, y }
     })
 
     // 创建与子节点的连接
     node.children.forEach((childId) => {
+      // 如果当前节点被折叠，不创建到子节点的连接
+      if (collapsedNodes.has(nodeId)) return
+
+      // 处理合并节点的连接逻辑
+      // 如果用户节点的子节点是一个助手节点，且它们被合并在一起，
+      // 则不需要创建从用户节点到助手节点的连接
+      if (node.role === 'user' && combinedNodes[childId] && combinedNodes[childId].userId === nodeId) {
+        return // 跳过创建边
+      }
+
+      // 如果当前节点被合并到了另一个节点中，则跳过为它创建边
+      if (nodesToSkip.has(childId)) {
+        // 如果是被合并的用户节点，则需要找到对应的助手节点，连到那里
+        // 找到与被合并用户节点对应的助手节点
+        let targetNodeId = childId
+        Object.entries(combinedNodes).forEach(([assistantId, data]) => {
+          if (data.userId === childId) {
+            targetNodeId = assistantId
+          }
+        })
+
+        // 如果目标节点ID已更改，则创建到新目标的边
+        if (targetNodeId !== childId) {
+          const isSelectedPath = node.isSelected && dialogMap.nodes[targetNodeId].isSelected
+
+          // 计算连接点
+          const childPosition = nodePositions[targetNodeId]
+          const parentPosition = nodePositions[nodeId]
+
+          // 默认连接类型
+          let sourcePosition = Position.Bottom
+          let targetPosition = Position.Top
+
+          // 根据相对位置调整连接点
+          if (childPosition && parentPosition) {
+            const dx = childPosition.x - parentPosition.x
+
+            if (dx < -NODE_WIDTH / 2) {
+              sourcePosition = Position.Left
+              targetPosition = Position.Right
+            } else if (dx > NODE_WIDTH / 2) {
+              sourcePosition = Position.Right
+              targetPosition = Position.Left
+            }
+          }
+
+          // 创建边
+          flowEdges.push({
+            id: `edge-${nodeId}-to-${targetNodeId}`,
+            source: nodeId,
+            target: targetNodeId,
+            sourceHandle: null,
+            targetHandle: null,
+            data: {
+              sourcePosition,
+              targetPosition,
+              isHorizontal:
+                childPosition && parentPosition && Math.abs(childPosition.x - parentPosition.x) > NODE_WIDTH / 2
+            },
+            animated: isSelectedPath,
+            type: 'bezier',
+            style: isSelectedPath ? selectedEdgeStyle : commonEdgeStyle,
+            markerEnd: isSelectedPath
+              ? {
+                  type: MarkerType.ArrowClosed,
+                  width: 10,
+                  height: 10,
+                  color: 'var(--color-primary)'
+                }
+              : {
+                  type: MarkerType.Arrow,
+                  width: 8,
+                  height: 8,
+                  color: 'var(--color-border-dark, #666)'
+                }
+          })
+        }
+
+        return // 跳过创建原始边
+      }
+
       // 检查是否为选中路径上的连接
       const isSelected = node.isSelected && dialogMap.nodes[childId].isSelected
 
@@ -416,14 +596,14 @@ export const buildDialogMapFlowData = (
         markerEnd: isSelected
           ? {
               type: MarkerType.ArrowClosed,
-              width: 12,
-              height: 12,
+              width: 10, // 减小箭头大小，原值12
+              height: 10, // 减小箭头大小，原值12
               color: 'var(--color-primary)'
             }
           : {
               type: MarkerType.Arrow,
-              width: 12,
-              height: 12,
+              width: 8, // 减小箭头大小，原值12
+              height: 8, // 减小箭头大小，原值12
               color: 'var(--color-border-dark, #666)'
             }
       })

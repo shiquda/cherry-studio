@@ -395,26 +395,51 @@ class DialogMapService {
       throw new Error(`Parent node not found for node ${nodeId}`)
     }
 
-    // 从父节点的子节点列表中移除当前节点
-    parentNode.children = parentNode.children.filter((childId) => childId !== nodeId)
+    // 检查是否为双节点卡片的情况
+    const nodesToDelete = new Set<string>()
+    if (nodeToDelete.role === 'user' && nodeToDelete.children.length === 1) {
+      // 如果是用户节点且只有一个子节点，检查子节点是否为助手节点
+      const childNode = dialogMap.nodes[nodeToDelete.children[0]]
+      if (childNode && childNode.role === 'assistant') {
+        // 将助手节点也加入删除集合
+        nodesToDelete.add(childNode.id)
+      }
+    } else if (nodeToDelete.role === 'assistant' && parentNode.role === 'user' && parentNode.children.length === 1) {
+      // 如果是助手节点，且其父节点是只有一个子节点的用户节点
+      // 将用户节点也加入删除集合
+      nodesToDelete.add(parentNode.id)
+      // 更新父节点引用为用户节点的父节点
+      const grandParentNode = parentNode.parentId ? dialogMap.nodes[parentNode.parentId] : null
+      if (grandParentNode) {
+        grandParentNode.children = grandParentNode.children.filter((id) => id !== parentNode.id)
+      }
+    }
 
-    // 递归收集所有要删除的节点ID
+    // 添加当前节点到删除集合
+    nodesToDelete.add(nodeId)
+
+    // 递归收集所有要删除的节点的子节点ID
     const collectNodesToDelete = (id: string, result: Set<string>): Set<string> => {
-      result.add(id)
       const node = dialogMap.nodes[id]
       if (node && node.children.length > 0) {
         for (const childId of node.children) {
-          collectNodesToDelete(childId, result)
+          if (!nodesToDelete.has(childId)) {
+            // 避免重复处理已经标记要删除的节点
+            result.add(childId)
+            collectNodesToDelete(childId, result)
+          }
         }
       }
       return result
     }
 
-    const nodesToDeleteSet = collectNodesToDelete(nodeId, new Set<string>())
-    const nodesToDelete = Array.from(nodesToDeleteSet)
+    // 对所有要删除的节点收集它们的子节点
+    for (const id of nodesToDelete) {
+      collectNodesToDelete(id, nodesToDelete)
+    }
 
     // 保存当前选中路径中不被删除的节点
-    let updatedSelectedPath = dialogMap.selectedPath.filter((id) => !nodesToDelete.includes(id))
+    let updatedSelectedPath = dialogMap.selectedPath.filter((id) => !nodesToDelete.has(id))
 
     // 从节点映射中删除节点
     nodesToDelete.forEach((id) => {

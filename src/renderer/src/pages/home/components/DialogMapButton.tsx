@@ -2,7 +2,7 @@ import { getTopicById } from '@renderer/hooks/useTopic'
 import { RootState } from '@renderer/store'
 import { selectCurrentTopicId } from '@renderer/store/messages'
 import { Topic } from '@renderer/types'
-import { Drawer, Tooltip } from 'antd'
+import { Drawer, message, Tooltip } from 'antd'
 import { GitFork } from 'lucide-react'
 import { FC, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -16,6 +16,12 @@ const DialogMapButton: FC = () => {
   const [isDialogMapOpen, setIsDialogMapOpen] = useState(false)
   const [currentTopic, setCurrentTopic] = useState<Topic | null>(null)
   const currentTopicId = useSelector((state: RootState) => selectCurrentTopicId(state))
+  // 检查当前话题是否有未完成的回答
+  const isStreaming = useSelector((state: RootState) =>
+    currentTopicId
+      ? Object.values(state.messages.streamMessagesByTopic[currentTopicId] || {}).some((m) => m?.status === 'pending')
+      : false
+  )
 
   // 获取当前Topic
   useEffect(() => {
@@ -28,6 +34,10 @@ const DialogMapButton: FC = () => {
 
   // 打开对话地图
   const openDialogMap = () => {
+    if (isStreaming) {
+      message.warning(t('dialogMap.wait_for_answer_end'))
+      return
+    }
     setIsDialogMapOpen(true)
   }
 
