@@ -6,19 +6,14 @@ import {
   RobotOutlined,
   UserOutlined
 } from '@ant-design/icons'
+import ModelAvatar from '@renderer/components/Avatar/ModelAvatar'
 import { getModelLogo } from '@renderer/config/models'
+import { Model } from '@renderer/types'
 import { Handle, Position } from '@xyflow/react'
 import { Avatar, Dropdown, Modal, Tooltip } from 'antd'
 import { FC, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
-
-// 模型信息类型
-interface ModelInfo {
-  id: string
-  name: string
-  // 其他模型相关字段
-}
 
 // 组件数据接口定义
 interface DialogMapNodeData {
@@ -29,7 +24,7 @@ interface DialogMapNodeData {
   messageId?: string
   model?: string
   modelId?: string
-  modelInfo?: ModelInfo | null
+  modelInfo?: Model | null
   isSelected: boolean
   isCollapsed: boolean
   childrenCount: number
@@ -168,10 +163,27 @@ const DialogMapNode: FC<DialogMapNodeProps> = ({ data }) => {
 
   // 获取模型头像图标
   const getModelAvatar = () => {
-    if (data.modelInfo && data.modelId) {
-      const logoSrc = getModelLogo(data.modelId)
-      return <Avatar src={logoSrc} style={{ backgroundColor: 'var(--color-black-mute)' }} size={22} />
+    // 如果有完整的modelInfo对象，优先使用ModelAvatar组件
+    if (data.modelInfo) {
+      try {
+        return <ModelAvatar model={data.modelInfo as any} size={22} />
+      } catch (error) {
+        console.error('Error rendering ModelAvatar:', error)
+      }
     }
+    // 如果只有modelId，使用普通Avatar组件
+    if (data.modelId) {
+      const logoSrc = getModelLogo(data.modelId)
+      return (
+        <Avatar
+          src={logoSrc}
+          icon={!logoSrc ? <RobotOutlined /> : undefined}
+          style={{ backgroundColor: 'var(--color-black-mute)' }}
+          size={22}
+        />
+      )
+    }
+    // 默认fallback
     return <Avatar icon={<RobotOutlined />} style={{ backgroundColor: 'var(--color-black-mute)' }} size={22} />
   }
 
