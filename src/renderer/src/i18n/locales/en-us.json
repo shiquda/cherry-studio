@@ -1499,7 +1499,10 @@
       "delete_node_error": "Failed to delete node",
       "unknown_model": "Unknown model",
       "no_conversation": "No conversation",
-      "navigate_to_node": "Locate to message"
+      "navigate_to_node": "Locate to message",
+      "collapse_nodes": "Collapse nodes",
+      "expand_nodes": "Expand nodes",
+      "create_branch": "Create branch"
     }
   }
 }

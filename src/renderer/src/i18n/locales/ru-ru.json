@@ -1498,7 +1498,10 @@
       "delete_node_error": "Не удалось удалить узел",
       "unknown_model": "Неизвестная модель",
       "no_conversation": "Нет разговора",
-      "navigate_to_node": "Перейти к сообщению"
+      "navigate_to_node": "Перейти к сообщению",
+      "collapse_nodes": "Свернуть узлы",
+      "expand_nodes": "Развернуть узлы",
+      "create_branch": "Добавить ветку"
     }
   }
 }

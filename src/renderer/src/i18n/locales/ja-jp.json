@@ -1498,7 +1498,10 @@
       "delete_node_error": "ノードの削除に失敗しました",
       "unknown_model": "不明なモデル",
       "no_conversation": "会話がありません",
-      "navigate_to_node": "対応するメッセージに移動"
+      "navigate_to_node": "対応するメッセージに移動",
+      "collapse_nodes": "ノードを折りたたむ",
+      "expand_nodes": "ノードを展開",
+      "create_branch": "ブランチを作成"
     }
   }
 }

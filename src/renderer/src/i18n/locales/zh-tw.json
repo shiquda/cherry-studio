@@ -1499,7 +1499,10 @@
       "delete_node_error": "刪除節點失敗",
       "unknown_model": "未知模型",
       "no_conversation": "暫無對話",
-      "navigate_to_node": "定位到對應訊息"
+      "navigate_to_node": "定位到對應訊息",
+      "collapse_nodes": "折疊節點",
+      "expand_nodes": "展開節點",
+      "create_branch": "添加分支"
     }
   }
 }
