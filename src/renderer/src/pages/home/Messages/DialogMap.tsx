@@ -89,6 +89,7 @@ const DialogMapNode: FC<{ data: any }> = ({ data }) => {
 
   // 处理折叠/展开点击
   const handleCollapseClick = (e: React.MouseEvent) => {
+    console.log('handleCollapseClick', e)
     e.stopPropagation()
     const newIsCollapsed = !isCollapsed
     setIsCollapsed(newIsCollapsed)
@@ -441,8 +442,8 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
         console.error('Failed to save collapsed state:', error)
       }
     }
-    // 只有在对话地图加载完成后才保存折叠状态
-    if (!loading && dialogMap && collapsedNodes.size > 0) {
+    // 只有在对话地图加载完成后才保存折叠状态，移除对collapsedNodes.size的检查，确保空集合也会被保存
+    if (!loading && dialogMap) {
       saveCollapsedState()
     }
   }, [collapsedNodes, topic.id, loading, dialogMap])
