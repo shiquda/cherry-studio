@@ -205,39 +205,42 @@ const DialogMapNode: FC<DialogMapNodeProps> = ({ data }) => {
     </TooltipContent>
   )
 
+  // 使用一个包装的Dropdown来处理右键菜单
   return (
-    <Tooltip
-      title={tooltipTitle}
-      placement="top"
-      color="rgba(0, 0, 0, 0.85)"
-      mouseEnterDelay={0.2}
-      mouseLeaveDelay={0.1}
-      destroyTooltipOnHide>
-      <Dropdown menu={{ items: contextMenuItems }} trigger={['contextMenu']}>
-        <NodeWrapper>
-          {/* 只在助手/组合节点显示添加分支按钮 */}
-          {(nodeType === 'assistant' || isCombined) && (
-            <AddBranchButtonContainer
-              onMouseEnter={() => handleAddBranchHover(true)}
-              onMouseLeave={() => handleAddBranchHover(false)}>
-              <Tooltip title={t('dialogMap.create_branch')} placement="top">
-                <AddBranchButtonOutside onClick={handleAddBranch}>
-                  <PlusOutlined />
-                </AddBranchButtonOutside>
-              </Tooltip>
-              {showAddBranchArrow && <BranchArrow />}
-            </AddBranchButtonContainer>
-          )}
-
-          {/* 添加折叠按钮 */}
-          {hasChildren && (
-            <Tooltip title={isCollapsed ? t('dialogMap.expand_nodes') : t('dialogMap.collapse_nodes')} placement="top">
-              <CollapseButton onClick={handleCollapseClick} $isCollapsed={isCollapsed}>
-                {isCollapsed ? data.childrenCount : <MinusOutlined />}
-              </CollapseButton>
+    <Dropdown menu={{ items: contextMenuItems }} trigger={['contextMenu']}>
+      <NodeWrapper>
+        {/* 将操作按钮放在主要Tooltip之外，避免干扰 */}
+        {/* 只在助手/组合节点显示添加分支按钮 */}
+        {(nodeType === 'assistant' || isCombined) && (
+          <AddBranchButtonContainer
+            onMouseEnter={() => handleAddBranchHover(true)}
+            onMouseLeave={() => handleAddBranchHover(false)}>
+            <Tooltip title={t('dialogMap.create_branch')} placement="top">
+              <AddBranchButtonOutside onClick={handleAddBranch}>
+                <PlusOutlined />
+              </AddBranchButtonOutside>
             </Tooltip>
-          )}
+            {showAddBranchArrow && <BranchArrow />}
+          </AddBranchButtonContainer>
+        )}
 
+        {/* 添加折叠按钮 */}
+        {hasChildren && (
+          <Tooltip title={isCollapsed ? t('dialogMap.expand_nodes') : t('dialogMap.collapse_nodes')} placement="top">
+            <CollapseButton onClick={handleCollapseClick} $isCollapsed={isCollapsed}>
+              {isCollapsed ? data.childrenCount : <MinusOutlined />}
+            </CollapseButton>
+          </Tooltip>
+        )}
+
+        {/* 为主节点内容单独添加Tooltip */}
+        <Tooltip
+          title={tooltipTitle}
+          placement="top"
+          color="rgba(0, 0, 0, 0.85)"
+          mouseEnterDelay={0.2}
+          mouseLeaveDelay={0.1}
+          destroyTooltipOnHide>
           <CustomNodeContainer
             style={{
               borderColor,
@@ -293,9 +296,9 @@ const DialogMapNode: FC<DialogMapNodeProps> = ({ data }) => {
             <Handle type="source" position={Position.Left} style={handleStyle} isConnectable={false} />
             <Handle type="source" position={Position.Top} style={handleStyle} isConnectable={false} />
           </CustomNodeContainer>
-        </NodeWrapper>
-      </Dropdown>
-    </Tooltip>
+        </Tooltip>
+      </NodeWrapper>
+    </Dropdown>
   )
 }
 
