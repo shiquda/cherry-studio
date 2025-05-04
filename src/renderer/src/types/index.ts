@@ -3,7 +3,7 @@ import type OpenAI from 'openai'
 import React from 'react'
 import { BuiltinTheme } from 'shiki'
 
-import type { Message } from './newMessage'
+import type { Message, MessageBlock } from './newMessage'
 
 export type Assistant = {
   id: string
@@ -139,8 +139,8 @@ export type DialogMapNode = {
   id: string
   messageId: string
   parentId: string | null
-  role: 'user' | 'assistant'
-  content: string
+  role: 'user' | 'assistant' | 'system'
+  blocks: MessageBlock['id'][]
   children: string[] // 子节点ID数组
   createdAt: string
   isSelected?: boolean

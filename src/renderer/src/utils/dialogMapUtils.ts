@@ -435,7 +435,7 @@ export const buildDialogMapFlowData = (
       if (userNode) {
         isCombinedNode = true
         combinedData = {
-          userContent: userNode.content
+          blocks: userNode.blocks,
         }
       }
     }
@@ -447,7 +447,7 @@ export const buildDialogMapFlowData = (
       id: nodeId,
       type: 'dialogMapNode',
       data: {
-        content: node.content,
+        blocks: node.blocks,
         type: node.role,
         nodeId: nodeId,
         messageId: node.messageId,

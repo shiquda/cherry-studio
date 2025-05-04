@@ -5,7 +5,7 @@ import db from '@renderer/databases'
 import DialogMapService from '@renderer/services/DialogMapService'
 import { EVENT_NAMES, EventEmitter } from '@renderer/services/EventService'
 import { useAppDispatch } from '@renderer/store'
-import { updateMessages } from '@renderer/store/messages'
+import { newMessagesActions } from '@renderer/store/newMessage'
 import type { DialogMap as DialogMapType, Topic } from '@renderer/types'
 import { buildDialogMapFlowData } from '@renderer/utils/dialogMapUtils'
 import { BezierEdge, Controls, MiniMap, ReactFlow, ReactFlowProvider } from '@xyflow/react'
@@ -237,7 +237,7 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
         const messages = await DialogMapService.generateMessagesFromPath(dialogMap, ancestors)
 
         // 更新当前对话的消息
-        dispatch(updateMessages(topic, messages))
+        dispatch(newMessagesActions.messagesReceived({ topicId: topic.id, messages }))
 
         // 发送事件通知消息已更新
         EventEmitter.emit(EVENT_NAMES.MESSAGES_UPDATED, { topicId: topic.id })
@@ -270,7 +270,7 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
           const messages = await DialogMapService.generateMessagesFromPath(updatedMap, updatedMap.selectedPath)
 
           // 更新当前对话的消息
-          dispatch(updateMessages(topic, messages))
+          dispatch(newMessagesActions.messagesReceived({ topicId: topic.id, messages }))
 
           // 发送事件通知消息已更新
           EventEmitter.emit(EVENT_NAMES.MESSAGES_UPDATED, { topicId: topic.id })
@@ -308,7 +308,7 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
           const messages = await DialogMapService.processPathChangeAndGenerateMessages(dialogMap.id, fullPath)
 
           // 更新当前对话的消息
-          dispatch(updateMessages(topic, messages))
+          dispatch(newMessagesActions.messagesReceived({ topicId: topic.id, messages }))
 
           // 发送事件通知消息已更新
           EventEmitter.emit(EVENT_NAMES.MESSAGES_UPDATED, { topicId: topic.id })
@@ -368,7 +368,7 @@ const DialogMap: FC<DialogMapProps> = ({ topic, onClose }) => {
       const messages = await DialogMapService.generateMessagesFromPath(updatedMap, updatedMap.selectedPath)
 
       // 更新当前对话的消息
-      dispatch(updateMessages(topic, messages))
+      dispatch(newMessagesActions.messagesReceived({ topicId: topic.id, messages }))
 
       // 发送事件通知消息已更新
       EventEmitter.emit(EVENT_NAMES.MESSAGES_UPDATED, { topicId: topic.id })

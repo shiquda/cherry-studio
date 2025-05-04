@@ -1,6 +1,5 @@
 import { getTopicById } from '@renderer/hooks/useTopic'
 import { RootState } from '@renderer/store'
-import { selectCurrentTopicId } from '@renderer/store/messages'
 import { Topic } from '@renderer/types'
 import { Drawer, message, Tooltip } from 'antd'
 import { GitFork } from 'lucide-react'
@@ -15,13 +14,17 @@ const DialogMapButton: FC = () => {
   const { t } = useTranslation()
   const [isDialogMapOpen, setIsDialogMapOpen] = useState(false)
   const [currentTopic, setCurrentTopic] = useState<Topic | null>(null)
-  const currentTopicId = useSelector((state: RootState) => selectCurrentTopicId(state))
-  // 检查当前话题是否有未完成的回答
-  const isStreaming = useSelector((state: RootState) =>
-    currentTopicId
-      ? Object.values(state.messages.streamMessagesByTopic[currentTopicId] || {}).some((m) => m?.status === 'pending')
-      : false
-  )
+  const currentTopicId = useSelector((state: RootState) => state.messages.currentTopicId)
+
+  const isStreaming = useSelector((state: RootState) => {
+    if (!currentTopicId) return false
+
+    const topicMessageIds = state.messages.messageIdsByTopic[currentTopicId] || []
+    return topicMessageIds.some((id) => {
+      const message = state.messages.entities[id]
+      return message && message.status === 'processing'
+    })
+  })
 
   // 获取当前Topic
   useEffect(() => {

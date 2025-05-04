@@ -1,5 +1,6 @@
 import db from '@renderer/databases'
-import { DialogMap, DialogMapNode, Message } from '@renderer/types'
+import { DialogMap, DialogMapNode } from '@renderer/types'
+import { AssistantMessageStatus, Message, UserMessageStatus } from '@renderer/types/newMessage'
 import { uuid } from '@renderer/utils'
 import { buildFullPath, findAncestors, findPathNodes } from '@renderer/utils/dialogMapUtils'
 
@@ -40,7 +41,7 @@ class DialogMapService {
         messageId: message.id,
         parentId: previousNodeId,
         role: message.role,
-        content: message.content,
+        blocks: message.blocks,
         children: [],
         createdAt: message.createdAt,
         modelId: message.modelId,
@@ -121,8 +122,7 @@ class DialogMapService {
     // 根据路径收集节点
     const pathNodes = path
       .map((nodeId) => {
-        const node = dialogMap.nodes[nodeId]
-        return node
+        return dialogMap.nodes[nodeId]
       })
       .filter(Boolean)
 
@@ -135,14 +135,13 @@ class DialogMapService {
           message = {
             id: node.messageId,
             role: node.role,
-            content: node.content,
             assistantId: node.modelId || '',
             topicId: dialogMap.topicId,
             createdAt: node.createdAt,
             modelId: node.modelId || '',
             model: node.model,
-            status: 'success',
-            type: 'text'
+            status: node.role === 'user' ? UserMessageStatus.SUCCESS : AssistantMessageStatus.SUCCESS,
+            blocks: []
           }
           // 将新创建的消息添加到主题中
           topic.messages.push(message)
@@ -210,7 +209,7 @@ class DialogMapService {
         messageId: message.id,
         parentId: currentParentId,
         role: message.role,
-        content: message.content,
+        blocks: message.blocks,
         children: [],
         createdAt: message.createdAt,
         modelId: message.modelId,
@@ -322,7 +321,7 @@ class DialogMapService {
         messageId: message.id,
         parentId: currentParentId,
         role: message.role,
-        content: message.content,
+        blocks: message.blocks,
         children: [],
         createdAt: message.createdAt,
         modelId: message.modelId,
