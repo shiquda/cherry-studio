@@ -2,7 +2,6 @@ import type { WebSearchResultBlock } from '@anthropic-ai/sdk/resources'
 import type { GroundingMetadata } from '@google/genai'
 import type OpenAI from 'openai'
 import React from 'react'
-import { BuiltinTheme } from 'shiki'
 
 import type { Message } from './newMessage'
 
@@ -214,6 +213,7 @@ export interface GeneratePainting extends PaintingParams {
   seed?: string
   negativePrompt?: string
   magicPromptOption?: boolean
+  renderingSpeed?: string
 }
 
 export interface EditPainting extends PaintingParams {
@@ -225,6 +225,7 @@ export interface EditPainting extends PaintingParams {
   styleType?: string
   seed?: string
   magicPromptOption?: boolean
+  renderingSpeed?: string
 }
 
 export interface RemixPainting extends PaintingParams {
@@ -238,6 +239,7 @@ export interface RemixPainting extends PaintingParams {
   seed?: string
   negativePrompt?: string
   magicPromptOption?: boolean
+  renderingSpeed?: string
 }
 
 export interface ScalePainting extends PaintingParams {
@@ -248,6 +250,7 @@ export interface ScalePainting extends PaintingParams {
   numImages?: number
   seed?: string
   magicPromptOption?: boolean
+  renderingSpeed?: string
 }
 
 export type PaintingAction = Partial<GeneratePainting & RemixPainting & EditPainting & ScalePainting> & PaintingParams
@@ -313,7 +316,7 @@ export type TranslateLanguageVarious =
   | 'portuguese'
   | 'russian'
 
-export type CodeStyleVarious = BuiltinTheme | 'auto'
+export type CodeStyleVarious = 'auto' | string
 
 export type WebDavConfig = {
   webdavHost: string
@@ -321,6 +324,7 @@ export type WebDavConfig = {
   webdavPass: string
   webdavPath: string
   fileName?: string
+  skipBackupFile?: boolean
 }
 
 export type AppInfo = {
