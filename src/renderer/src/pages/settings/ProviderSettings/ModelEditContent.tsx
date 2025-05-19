@@ -134,11 +134,6 @@ const ModelEditContent: FC<ModelEditContentProps> = ({ model, onUpdateModel, ope
         </Form.Item>
         <Form.Item style={{ marginBottom: 15, textAlign: 'center' }}>
           <Flex justify="center" align="center" style={{ position: 'relative' }}>
-            <div>
-              <Button type="primary" htmlType="submit" size="middle">
-                {t('common.save')}
-              </Button>
-            </div>
             <MoreSettingsRow
               onClick={() => setShowMoreSettings(!showMoreSettings)}
               style={{ position: 'absolute', right: 0 }}>
