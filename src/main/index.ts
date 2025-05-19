@@ -1,23 +1,49 @@
+import '@main/config'
+
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { replaceDevtoolsFont } from '@main/utils/windowUtil'
-import { IpcChannel } from '@shared/IpcChannel'
-import { app, ipcMain } from 'electron'
+import { app } from 'electron'
 import installExtension, { REACT_DEVELOPER_TOOLS, REDUX_DEVTOOLS } from 'electron-devtools-installer'
 import Logger from 'electron-log'
 
+import { isDev } from './constant'
 import { registerIpc } from './ipc'
 import { configManager } from './services/ConfigManager'
 import mcpService from './services/MCPService'
-import { CHERRY_STUDIO_PROTOCOL, handleProtocolUrl, registerProtocolClient } from './services/ProtocolClient'
+import {
+  CHERRY_STUDIO_PROTOCOL,
+  handleProtocolUrl,
+  registerProtocolClient,
+  setupAppImageDeepLink
+} from './services/ProtocolClient'
 import { registerShortcuts } from './services/ShortcutService'
 import { TrayService } from './services/TrayService'
 import { windowService } from './services/WindowService'
+import { setUserDataDir } from './utils/file'
+
+Logger.initialize()
+
+// in production mode, handle uncaught exception and unhandled rejection globally
+if (!isDev) {
+  // handle uncaught exception
+  process.on('uncaughtException', (error) => {
+    Logger.error('Uncaught Exception:', error)
+  })
+
+  // handle unhandled rejection
+  process.on('unhandledRejection', (reason, promise) => {
+    Logger.error('Unhandled Rejection at:', promise, 'reason:', reason)
+  })
+}
 
 // Check for single instance lock
 if (!app.requestSingleInstanceLock()) {
   app.quit()
   process.exit(0)
 } else {
+  // Portable dir must be setup before app ready
+  setUserDataDir()
+
   // This method will be called when Electron has finished
   // initialization and is ready to create browser windows.
   // Some APIs can only be used after this event occurs.
@@ -50,22 +76,14 @@ if (!app.requestSingleInstanceLock()) {
 
     replaceDevtoolsFont(mainWindow)
 
-    if (process.env.NODE_ENV === 'development') {
+    // Setup deep link for AppImage on Linux
+    await setupAppImageDeepLink()
+
+    if (isDev) {
       installExtension([REDUX_DEVTOOLS, REACT_DEVELOPER_TOOLS])
         .then((name) => console.log(`Added Extension:  ${name}`))
         .catch((err) => console.log('An error occurred: ', err))
     }
-    ipcMain.handle(IpcChannel.System_GetDeviceType, () => {
-      return process.platform === 'darwin' ? 'mac' : process.platform === 'win32' ? 'windows' : 'linux'
-    })
-  })
-
-  registerProtocolClient(app)
-
-  // macOS specific: handle protocol when app is already running
-  app.on('open-url', (event, url) => {
-    event.preventDefault()
-    handleProtocolUrl(url)
   })
 
   registerProtocolClient(app)
@@ -97,7 +115,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('will-quit', async () => {
     // event.preventDefault()
     try {
-      await mcpService.cleanup()
+      await mcpService().cleanup()
     } catch (error) {
       Logger.error('Error cleaning up MCP service:', error)
     }

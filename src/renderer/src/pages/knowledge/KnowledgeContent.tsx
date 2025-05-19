@@ -5,6 +5,7 @@ import { HStack } from '@renderer/components/Layout'
 import PromptPopup from '@renderer/components/Popups/PromptPopup'
 import TextEditPopup from '@renderer/components/Popups/TextEditPopup'
 import Scrollbar from '@renderer/components/Scrollbar'
+import Logger from '@renderer/config/logger'
 import { useKnowledge } from '@renderer/hooks/useKnowledge'
 import FileManager from '@renderer/services/FileManager'
 import { getProviderName } from '@renderer/services/ProviderService'
@@ -13,7 +14,7 @@ import { formatFileSize } from '@renderer/utils'
 import { bookExts, documentExts, textExts, thirdPartyApplicationExts } from '@shared/config/constant'
 import { Alert, Button, Dropdown, Empty, message, Tag, Tooltip, Upload } from 'antd'
 import dayjs from 'dayjs'
-import { ChevronsDown, ChevronsUp, Plus, Settings2 } from 'lucide-react'
+import { ChevronsDown, ChevronsUp, Plus, Search, Settings2 } from 'lucide-react'
 import VirtualList from 'rc-virtual-list'
 import { FC, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -21,6 +22,8 @@ import styled from 'styled-components'
 
 import CustomCollapse from '../../components/CustomCollapse'
 import FileItem from '../files/FileItem'
+import { NavbarIcon } from '../home/Navbar'
+import KnowledgeSearchPopup from './components/KnowledgeSearchPopup'
 import KnowledgeSettingsPopup from './components/KnowledgeSettingsPopup'
 import StatusIcon from './components/StatusIcon'
 
@@ -192,7 +195,7 @@ const KnowledgeContent: FC<KnowledgeContentProps> = ({ selectedBase }) => {
     }
 
     const path = await window.api.file.selectFolder()
-    console.log('[KnowledgeContent] Selected directory:', path)
+    Logger.log('[KnowledgeContent] Selected directory:', path)
     path && addDirectory(path)
   }
 
@@ -242,12 +245,18 @@ const KnowledgeContent: FC<KnowledgeContentProps> = ({ selectedBase }) => {
                 </Tag>
               </div>
             </Tooltip>
-            <Tag color="cyan" style={{ borderRadius: 20, margin: 0 }}>
-              {t('models.dimensions', { dimensions: base.dimensions || 0 })}
-            </Tag>
+            {base.rerankModel && (
+              <Tag color="cyan" style={{ borderRadius: 20, margin: 0 }}>
+                {base.rerankModel.name}
+              </Tag>
+            )}
           </div>
         </ModelInfo>
         <HStack gap={8} alignItems="center">
+          {/* 使用selected base导致修改设置后没有响应式更新 */}
+          <NarrowIcon onClick={() => base && KnowledgeSearchPopup.show({ base: base })}>
+            <Search size={18} />
+          </NarrowIcon>
           <Tooltip title={expandAll ? t('common.collapse') : t('common.expand')}>
             <Button
               size="small"
@@ -692,6 +701,12 @@ const StatusIconWrapper = styled.div`
 const RefreshIcon = styled(RedoOutlined)`
   font-size: 15px !important;
   color: var(--color-text-2);
+`
+
+const NarrowIcon = styled(NavbarIcon)`
+  @media (max-width: 1000px) {
+    display: none;
+  }
 `
 
 export default KnowledgeContent

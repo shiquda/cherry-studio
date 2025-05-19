@@ -95,7 +95,8 @@ export function getProviderLogo(providerId: string) {
   return PROVIDER_LOGO_MAP[providerId as keyof typeof PROVIDER_LOGO_MAP]
 }
 
-export const SUPPORTED_REANK_PROVIDERS = ['silicon', 'jina', 'voyageai']
+// export const SUPPORTED_REANK_PROVIDERS = ['silicon', 'jina', 'voyageai', 'dashscope', 'aihubmix']
+export const NOT_SUPPORTED_REANK_PROVIDERS = ['ollama']
 
 export const PROVIDER_CONFIG = {
   openai: {
@@ -148,7 +149,7 @@ export const PROVIDER_CONFIG = {
       url: 'https://api.siliconflow.cn'
     },
     websites: {
-      official: 'https://www.siliconflow.cn/',
+      official: 'https://www.siliconflow.cn',
       apiKey: 'https://cloud.siliconflow.cn/i/d1nTBKXU',
       docs: 'https://docs.siliconflow.cn/',
       models: 'https://docs.siliconflow.cn/docs/model-names'
@@ -579,7 +580,7 @@ export const PROVIDER_CONFIG = {
     },
     websites: {
       official: 'https://qiniu.com',
-      apiKey: 'https://marketing.qiniu.com/activity/2025_newspring?cps_key=1h4vzfbkxobiq#deepseek-title',
+      apiKey: 'https://portal.qiniu.com/ai-inference/api-key?cps_key=1h4vzfbkxobiq',
       docs: 'https://developer.qiniu.com/aitokenapi',
       models: 'https://developer.qiniu.com/aitokenapi/12883/model-list'
     }

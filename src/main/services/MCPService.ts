@@ -1,14 +1,17 @@
-import fs from 'node:fs'
+import crypto from 'node:crypto'
 import os from 'node:os'
 import path from 'node:path'
 
-import { isLinux, isMac, isWin } from '@main/constant'
 import { createInMemoryMCPServer } from '@main/mcpServers/factory'
 import { makeSureDirExists } from '@main/utils'
 import { getBinaryName, getBinaryPath } from '@main/utils/process'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { SSEClientTransport, SSEClientTransportOptions } from '@modelcontextprotocol/sdk/client/sse.js'
-import { getDefaultEnvironment, StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import {
+  StreamableHTTPClientTransport,
+  type StreamableHTTPClientTransportOptions
+} from '@modelcontextprotocol/sdk/client/streamableHttp'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory'
 import { nanoid } from '@reduxjs/toolkit'
 import {
@@ -22,10 +25,13 @@ import {
 } from '@types'
 import { app } from 'electron'
 import Logger from 'electron-log'
+import { EventEmitter } from 'events'
 import { memoize } from 'lodash'
 
 import { CacheService } from './CacheService'
-import { StreamableHTTPClientTransport, type StreamableHTTPClientTransportOptions } from './MCPStreamableHttpClient'
+import { CallBackServer } from './mcp/oauth/callback'
+import { McpOAuthClientProvider } from './mcp/oauth/provider'
+import getLoginShellEnvironment from './mcp/shell-env'
 
 // Generic type for caching wrapped functions
 type CachedFunction<T extends unknown[], R> = (...args: T) => Promise<R>
@@ -62,20 +68,18 @@ function withCache<T extends unknown[], R>(
 }
 
 class McpService {
+  private static instance: McpService | null = null
   private clients: Map<string, Client> = new Map()
+  private pendingClients: Map<string, Promise<Client>> = new Map()
 
-  private getServerKey(server: MCPServer): string {
-    return JSON.stringify({
-      baseUrl: server.baseUrl,
-      command: server.command,
-      args: server.args,
-      registryUrl: server.registryUrl,
-      env: server.env,
-      id: server.id
-    })
+  public static getInstance(): McpService {
+    if (!McpService.instance) {
+      McpService.instance = new McpService()
+    }
+    return McpService.instance
   }
 
-  constructor() {
+  private constructor() {
     this.initClient = this.initClient.bind(this)
     this.listTools = this.listTools.bind(this)
     this.callTool = this.callTool.bind(this)
@@ -90,8 +94,25 @@ class McpService {
     this.cleanup = this.cleanup.bind(this)
   }
 
+  private getServerKey(server: MCPServer): string {
+    return JSON.stringify({
+      baseUrl: server.baseUrl,
+      command: server.command,
+      args: server.args,
+      registryUrl: server.registryUrl,
+      env: server.env,
+      id: server.id
+    })
+  }
+
   async initClient(server: MCPServer): Promise<Client> {
     const serverKey = this.getServerKey(server)
+
+    // If there's a pending initialization, wait for it
+    const pendingClient = this.pendingClients.get(serverKey)
+    if (pendingClient) {
+      return pendingClient
+    }
 
     // Check if we already have a client for this server configuration
     const existingClient = this.clients.get(serverKey)
@@ -107,123 +128,226 @@ class McpService {
         } else {
           return existingClient
         }
-      } catch (error) {
-        Logger.error(`[MCP] Error pinging server ${server.name}:`, error)
+      } catch (error: any) {
+        Logger.error(`[MCP] Error pinging server ${server.name}:`, error?.message)
         this.clients.delete(serverKey)
       }
     }
-    // Create new client instance for each connection
-    const client = new Client({ name: 'Cherry Studio', version: app.getVersion() }, { capabilities: {} })
 
-    const args = [...(server.args || [])]
+    // Create a promise for the initialization process
+    const initPromise = (async () => {
+      try {
+        // Create new client instance for each connection
+        const client = new Client({ name: 'Cherry Studio', version: app.getVersion() }, { capabilities: {} })
 
-    let transport: StdioClientTransport | SSEClientTransport | InMemoryTransport | StreamableHTTPClientTransport
+        const args = [...(server.args || [])]
 
-    try {
-      // Create appropriate transport based on configuration
-      if (server.type === 'inMemory') {
-        Logger.info(`[MCP] Using in-memory transport for server: ${server.name}`)
-        const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
-        // start the in-memory server with the given name and environment variables
-        const inMemoryServer = createInMemoryMCPServer(server.name, args, server.env || {})
-        try {
-          await inMemoryServer.connect(serverTransport)
-          Logger.info(`[MCP] In-memory server started: ${server.name}`)
-        } catch (error: Error | any) {
-          Logger.error(`[MCP] Error starting in-memory server: ${error}`)
-          throw new Error(`Failed to start in-memory server: ${error.message}`)
-        }
-        // set the client transport to the client
-        transport = clientTransport
-      } else if (server.baseUrl) {
-        if (server.type === 'streamableHttp') {
-          const options: StreamableHTTPClientTransportOptions = {
-            requestInit: {
-              headers: server.headers || {}
-            }
-          }
-          transport = new StreamableHTTPClientTransport(new URL(server.baseUrl!), options)
-        } else if (server.type === 'sse') {
-          const options: SSEClientTransportOptions = {
-            requestInit: {
-              headers: server.headers || {}
-            }
-          }
-          transport = new SSEClientTransport(new URL(server.baseUrl!), options)
-        } else {
-          throw new Error('Invalid server type')
-        }
-      } else if (server.command) {
-        let cmd = server.command
-
-        if (server.command === 'npx' || server.command === 'bun' || server.command === 'bunx') {
-          cmd = await getBinaryPath('bun')
-          Logger.info(`[MCP] Using command: ${cmd}`)
-
-          // add -x to args if args exist
-          if (args && args.length > 0) {
-            if (!args.includes('-y')) {
-              !args.includes('-y') && args.unshift('-y')
-            }
-            if (!args.includes('x')) {
-              args.unshift('x')
-            }
-          }
-          if (server.registryUrl) {
-            server.env = {
-              ...server.env,
-              NPM_CONFIG_REGISTRY: server.registryUrl
-            }
-
-            // if the server name is mcp-auto-install, use the mcp-registry.json file in the bin directory
-            if (server.name.includes('mcp-auto-install')) {
-              const binPath = await getBinaryPath()
-              makeSureDirExists(binPath)
-              server.env.MCP_REGISTRY_PATH = path.join(binPath, '..', 'config', 'mcp-registry.json')
-            }
-          }
-        } else if (server.command === 'uvx' || server.command === 'uv') {
-          cmd = await getBinaryPath(server.command)
-          if (server.registryUrl) {
-            server.env = {
-              ...server.env,
-              UV_DEFAULT_INDEX: server.registryUrl,
-              PIP_INDEX_URL: server.registryUrl
-            }
-          }
-        }
-
-        Logger.info(`[MCP] Starting server with command: ${cmd} ${args ? args.join(' ') : ''}`)
-        // Logger.info(`[MCP] Environment variables for server:`, server.env)
-
-        transport = new StdioClientTransport({
-          command: cmd,
-          args,
-          env: {
-            ...getDefaultEnvironment(),
-            PATH: await this.getEnhancedPath(process.env.PATH || ''),
-            ...server.env
-          },
-          stderr: 'pipe'
+        // let transport: StdioClientTransport | SSEClientTransport | InMemoryTransport | StreamableHTTPClientTransport
+        const authProvider = new McpOAuthClientProvider({
+          serverUrlHash: crypto
+            .createHash('md5')
+            .update(server.baseUrl || '')
+            .digest('hex')
         })
-        transport.stderr?.on('data', (data) =>
-          Logger.info(`[MCP] Stdio stderr for server: ${server.name} `, data.toString())
-        )
-      } else {
-        throw new Error('Either baseUrl or command must be provided')
+
+        const initTransport = async (): Promise<
+          StdioClientTransport | SSEClientTransport | InMemoryTransport | StreamableHTTPClientTransport
+        > => {
+          // Create appropriate transport based on configuration
+          if (server.type === 'inMemory') {
+            Logger.info(`[MCP] Using in-memory transport for server: ${server.name}`)
+            const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair()
+            // start the in-memory server with the given name and environment variables
+            const inMemoryServer = createInMemoryMCPServer(server.name, args, server.env || {})
+            try {
+              await inMemoryServer.connect(serverTransport)
+              Logger.info(`[MCP] In-memory server started: ${server.name}`)
+            } catch (error: Error | any) {
+              Logger.error(`[MCP] Error starting in-memory server: ${error}`)
+              throw new Error(`Failed to start in-memory server: ${error.message}`)
+            }
+            // set the client transport to the client
+            return clientTransport
+          } else if (server.baseUrl) {
+            if (server.type === 'streamableHttp') {
+              const options: StreamableHTTPClientTransportOptions = {
+                requestInit: {
+                  headers: server.headers || {}
+                },
+                authProvider
+              }
+              return new StreamableHTTPClientTransport(new URL(server.baseUrl!), options)
+            } else if (server.type === 'sse') {
+              const options: SSEClientTransportOptions = {
+                eventSourceInit: {
+                  fetch: async (url, init) => {
+                    const headers = { ...(server.headers || {}), ...(init?.headers || {}) }
+
+                    // Get tokens from authProvider to make sure using the latest tokens
+                    if (authProvider && typeof authProvider.tokens === 'function') {
+                      try {
+                        const tokens = await authProvider.tokens()
+                        if (tokens && tokens.access_token) {
+                          headers['Authorization'] = `Bearer ${tokens.access_token}`
+                        }
+                      } catch (error) {
+                        Logger.error('Failed to fetch tokens:', error)
+                      }
+                    }
+
+                    return fetch(url, { ...init, headers })
+                  }
+                },
+                requestInit: {
+                  headers: server.headers || {}
+                },
+                authProvider
+              }
+              return new SSEClientTransport(new URL(server.baseUrl!), options)
+            } else {
+              throw new Error('Invalid server type')
+            }
+          } else if (server.command) {
+            let cmd = server.command
+
+            if (server.command === 'npx') {
+              cmd = await getBinaryPath('bun')
+              Logger.info(`[MCP] Using command: ${cmd}`)
+
+              // add -x to args if args exist
+              if (args && args.length > 0) {
+                if (!args.includes('-y')) {
+                  args.unshift('-y')
+                }
+                if (!args.includes('x')) {
+                  args.unshift('x')
+                }
+              }
+              if (server.registryUrl) {
+                server.env = {
+                  ...server.env,
+                  NPM_CONFIG_REGISTRY: server.registryUrl
+                }
+
+                // if the server name is mcp-auto-install, use the mcp-registry.json file in the bin directory
+                if (server.name.includes('mcp-auto-install')) {
+                  const binPath = await getBinaryPath()
+                  makeSureDirExists(binPath)
+                  server.env.MCP_REGISTRY_PATH = path.join(binPath, '..', 'config', 'mcp-registry.json')
+                }
+              }
+            } else if (server.command === 'uvx' || server.command === 'uv') {
+              cmd = await getBinaryPath(server.command)
+              if (server.registryUrl) {
+                server.env = {
+                  ...server.env,
+                  UV_DEFAULT_INDEX: server.registryUrl,
+                  PIP_INDEX_URL: server.registryUrl
+                }
+              }
+            }
+
+            Logger.info(`[MCP] Starting server with command: ${cmd} ${args ? args.join(' ') : ''}`)
+            // Logger.info(`[MCP] Environment variables for server:`, server.env)
+            const loginShellEnv = await this.getLoginShellEnv()
+            const stdioTransport = new StdioClientTransport({
+              command: cmd,
+              args,
+              env: {
+                ...loginShellEnv,
+                ...server.env
+              },
+              stderr: 'pipe'
+            })
+            stdioTransport.stderr?.on('data', (data) =>
+              Logger.info(`[MCP] Stdio stderr for server: ${server.name} `, data.toString())
+            )
+            return stdioTransport
+          } else {
+            throw new Error('Either baseUrl or command must be provided')
+          }
+        }
+
+        const handleAuth = async (client: Client, transport: SSEClientTransport | StreamableHTTPClientTransport) => {
+          Logger.info(`[MCP] Starting OAuth flow for server: ${server.name}`)
+          // Create an event emitter for the OAuth callback
+          const events = new EventEmitter()
+
+          // Create a callback server
+          const callbackServer = new CallBackServer({
+            port: authProvider.config.callbackPort,
+            path: authProvider.config.callbackPath || '/oauth/callback',
+            events
+          })
+
+          // Set a timeout to close the callback server
+          const timeoutId = setTimeout(() => {
+            Logger.warn(`[MCP] OAuth flow timed out for server: ${server.name}`)
+            callbackServer.close()
+          }, 300000) // 5 minutes timeout
+
+          try {
+            // Wait for the authorization code
+            const authCode = await callbackServer.waitForAuthCode()
+            Logger.info(`[MCP] Received auth code: ${authCode}`)
+
+            // Complete the OAuth flow
+            await transport.finishAuth(authCode)
+
+            Logger.info(`[MCP] OAuth flow completed for server: ${server.name}`)
+
+            const newTransport = await initTransport()
+            // Try to connect again
+            await client.connect(newTransport)
+
+            Logger.info(`[MCP] Successfully authenticated with server: ${server.name}`)
+          } catch (oauthError) {
+            Logger.error(`[MCP] OAuth authentication failed for server ${server.name}:`, oauthError)
+            throw new Error(
+              `OAuth authentication failed: ${oauthError instanceof Error ? oauthError.message : String(oauthError)}`
+            )
+          } finally {
+            // Clear the timeout and close the callback server
+            clearTimeout(timeoutId)
+            callbackServer.close()
+          }
+        }
+
+        try {
+          const transport = await initTransport()
+          try {
+            await client.connect(transport)
+          } catch (error: Error | any) {
+            if (
+              error instanceof Error &&
+              (error.name === 'UnauthorizedError' || error.message.includes('Unauthorized'))
+            ) {
+              Logger.info(`[MCP] Authentication required for server: ${server.name}`)
+              await handleAuth(client, transport as SSEClientTransport | StreamableHTTPClientTransport)
+            } else {
+              throw error
+            }
+          }
+
+          // Store the new client in the cache
+          this.clients.set(serverKey, client)
+
+          Logger.info(`[MCP] Activated server: ${server.name}`)
+          return client
+        } catch (error: any) {
+          Logger.error(`[MCP] Error activating server ${server.name}:`, error?.message)
+          throw new Error(`[MCP] Error activating server ${server.name}: ${error.message}`)
+        }
+      } finally {
+        // Clean up the pending promise when done
+        this.pendingClients.delete(serverKey)
       }
+    })()
 
-      await client.connect(transport)
+    // Store the pending promise
+    this.pendingClients.set(serverKey, initPromise)
 
-      // Store the new client in the cache
-      this.clients.set(serverKey, client)
-
-      Logger.info(`[MCP] Activated server: ${server.name}`)
-      return client
-    } catch (error: any) {
-      Logger.error(`[MCP] Error activating server ${server.name}:`, error)
-      throw new Error(`[MCP] Error activating server ${server.name}: ${error.message}`)
-    }
+    return initPromise
   }
 
   async closeClient(serverKey: string) {
@@ -265,8 +389,8 @@ class McpService {
     for (const [key] of this.clients) {
       try {
         await this.closeClient(key)
-      } catch (error) {
-        Logger.error(`[MCP] Failed to close client: ${error}`)
+      } catch (error: any) {
+        Logger.error(`[MCP] Failed to close client: ${error?.message}`)
       }
     }
   }
@@ -287,8 +411,8 @@ class McpService {
         serverTools.push(serverTool)
       })
       return serverTools
-    } catch (error) {
-      Logger.error(`[MCP] Failed to list tools for server: ${server.name}`, error)
+    } catch (error: any) {
+      Logger.error(`[MCP] Failed to list tools for server: ${server.name}`, error?.message)
       return []
     }
   }
@@ -316,8 +440,17 @@ class McpService {
   ): Promise<MCPCallToolResponse> {
     try {
       Logger.info('[MCP] Calling:', server.name, name, args)
+      if (typeof args === 'string') {
+        try {
+          args = JSON.parse(args)
+        } catch (e) {
+          Logger.error('[MCP] args parse error', args)
+        }
+      }
       const client = await this.initClient(server)
-      const result = await client.callTool({ name, arguments: args })
+      const result = await client.callTool({ name, arguments: args }, undefined, {
+        timeout: server.timeout ? server.timeout * 1000 : 60000 // Default timeout of 1 minute
+      })
       return result as MCPCallToolResponse
     } catch (error) {
       Logger.error(`[MCP] Error calling tool ${name} on ${server.name}:`, error)
@@ -338,19 +471,21 @@ class McpService {
    * List prompts available on an MCP server
    */
   private async listPromptsImpl(server: MCPServer): Promise<MCPPrompt[]> {
-    Logger.info(`[MCP] Listing prompts for server: ${server.name}`)
     const client = await this.initClient(server)
+    Logger.info(`[MCP] Listing prompts for server: ${server.name}`)
     try {
       const { prompts } = await client.listPrompts()
-      const serverPrompts = prompts.map((prompt: any) => ({
+      return prompts.map((prompt: any) => ({
         ...prompt,
         id: `p${nanoid()}`,
         serverId: server.id,
         serverName: server.name
       }))
-      return serverPrompts
-    } catch (error) {
-      Logger.error(`[MCP] Failed to list prompts for server: ${server.name}`, error)
+    } catch (error: any) {
+      // -32601 is the code for the method not found
+      if (error?.code !== -32601) {
+        Logger.error(`[MCP] Failed to list prompts for server: ${server.name}`, error?.message)
+      }
       return []
     }
   }
@@ -408,8 +543,8 @@ class McpService {
    * List resources available on an MCP server (implementation)
    */
   private async listResourcesImpl(server: MCPServer): Promise<MCPResource[]> {
-    Logger.info(`[MCP] Listing resources for server: ${server.name}`)
     const client = await this.initClient(server)
+    Logger.info(`[MCP] Listing resources for server: ${server.name}`)
     try {
       const result = await client.listResources()
       const resources = result.resources || []
@@ -419,8 +554,11 @@ class McpService {
         serverName: server.name
       }))
       return serverResources
-    } catch (error) {
-      Logger.error(`[MCP] Failed to list resources for server: ${server.name}`, error)
+    } catch (error: any) {
+      // -32601 is the code for the method not found
+      if (error?.code !== -32601) {
+        Logger.error(`[MCP] Failed to list resources for server: ${server.name}`, error?.message)
+      }
       return []
     }
   }
@@ -463,7 +601,7 @@ class McpService {
         contents: contents
       }
     } catch (error: Error | any) {
-      Logger.error(`[MCP] Failed to get resource ${uri} from server: ${server.name}`, error)
+      Logger.error(`[MCP] Failed to get resource ${uri} from server: ${server.name}`, error.message)
       throw new Error(`Failed to get resource ${uri} from server: ${server.name}: ${error.message}`)
     }
   }
@@ -487,150 +625,28 @@ class McpService {
     return await cachedGetResource(server, uri)
   }
 
-  private getSystemPath = memoize(async (): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      let command: string
-      let shell: string
-
-      if (process.platform === 'win32') {
-        shell = 'powershell.exe'
-        command = '$env:PATH'
-      } else {
-        // 尝试获取当前用户的默认 shell
-
-        let userShell = process.env.SHELL
-        if (!userShell) {
-          if (fs.existsSync('/bin/zsh')) {
-            userShell = '/bin/zsh'
-          } else if (fs.existsSync('/bin/bash')) {
-            userShell = '/bin/bash'
-          } else if (fs.existsSync('/bin/fish')) {
-            userShell = '/bin/fish'
-          } else {
-            userShell = '/bin/sh'
-          }
-        }
-        shell = userShell
-
-        // 根据不同的 shell 构建不同的命令
-        if (userShell.includes('zsh')) {
-          shell = '/bin/zsh'
-          command =
-            'source /etc/zshenv 2>/dev/null || true; source ~/.zshenv 2>/dev/null || true; source /etc/zprofile 2>/dev/null || true; source ~/.zprofile 2>/dev/null || true; source /etc/zshrc 2>/dev/null || true; source ~/.zshrc 2>/dev/null || true; source /etc/zlogin 2>/dev/null || true; source ~/.zlogin 2>/dev/null || true; echo $PATH'
-        } else if (userShell.includes('bash')) {
-          shell = '/bin/bash'
-          command =
-            'source /etc/profile 2>/dev/null || true; source ~/.bash_profile 2>/dev/null || true; source ~/.bash_login 2>/dev/null || true; source ~/.profile 2>/dev/null || true; source ~/.bashrc 2>/dev/null || true; echo $PATH'
-        } else if (userShell.includes('fish')) {
-          shell = '/bin/fish'
-          command =
-            'source /etc/fish/config.fish 2>/dev/null || true; source ~/.config/fish/config.fish 2>/dev/null || true; source ~/.config/fish/config.local.fish 2>/dev/null || true; echo $PATH'
-        } else {
-          // 默认使用 zsh
-          shell = '/bin/zsh'
-          command =
-            'source /etc/zshenv 2>/dev/null || true; source ~/.zshenv 2>/dev/null || true; source /etc/zprofile 2>/dev/null || true; source ~/.zprofile 2>/dev/null || true; source /etc/zshrc 2>/dev/null || true; source ~/.zshrc 2>/dev/null || true; source /etc/zlogin 2>/dev/null || true; source ~/.zlogin 2>/dev/null || true; echo $PATH'
-        }
-      }
-
-      console.log(`Using shell: ${shell} with command: ${command}`)
-      const child = require('child_process').spawn(shell, ['-c', command], {
-        env: { ...process.env },
-        cwd: app.getPath('home')
-      })
-
-      let path = ''
-      child.stdout.on('data', (data) => {
-        path += data.toString()
-      })
-
-      child.stderr.on('data', (data) => {
-        console.error('Error getting PATH:', data.toString())
-      })
-
-      child.on('close', (code) => {
-        if (code === 0) {
-          const trimmedPath = path.trim()
-          resolve(trimmedPath)
-        } else {
-          reject(new Error(`Failed to get system PATH, exit code: ${code}`))
-        }
-      })
-    })
-  })
-
-  /**
-   * Get enhanced PATH including common tool locations
-   */
-  private async getEnhancedPath(originalPath: string): Promise<string> {
-    let systemPath = ''
+  private getLoginShellEnv = memoize(async (): Promise<Record<string, string>> => {
     try {
-      systemPath = await this.getSystemPath()
+      const loginEnv = await getLoginShellEnvironment()
+      const pathSeparator = process.platform === 'win32' ? ';' : ':'
+      const cherryBinPath = path.join(os.homedir(), '.cherrystudio', 'bin')
+      loginEnv.PATH = `${loginEnv.PATH}${pathSeparator}${cherryBinPath}`
+      Logger.info('[MCP] Successfully fetched login shell environment variables:')
+      return loginEnv
     } catch (error) {
-      Logger.error('[MCP] Failed to get system PATH:', error)
+      Logger.error('[MCP] Failed to fetch login shell environment variables:', error)
+      return {}
     }
-    // 将原始 PATH 按分隔符分割成数组
-    const pathSeparator = process.platform === 'win32' ? ';' : ':'
-    const existingPaths = new Set(
-      [...systemPath.split(pathSeparator), ...originalPath.split(pathSeparator)].filter(Boolean)
-    )
-    const homeDir = process.env.HOME || process.env.USERPROFILE || ''
-
-    // 定义要添加的新路径
-    const newPaths: string[] = []
-
-    if (isMac) {
-      newPaths.push(
-        '/bin',
-        '/usr/bin',
-        '/usr/local/bin',
-        '/usr/local/sbin',
-        '/opt/homebrew/bin',
-        '/opt/homebrew/sbin',
-        '/usr/local/opt/node/bin',
-        `${homeDir}/.nvm/current/bin`,
-        `${homeDir}/.npm-global/bin`,
-        `${homeDir}/.yarn/bin`,
-        `${homeDir}/.cargo/bin`,
-        `${homeDir}/.cherrystudio/bin`,
-        '/opt/local/bin'
-      )
-    }
-
-    if (isLinux) {
-      newPaths.push(
-        '/bin',
-        '/usr/bin',
-        '/usr/local/bin',
-        `${homeDir}/.nvm/current/bin`,
-        `${homeDir}/.npm-global/bin`,
-        `${homeDir}/.yarn/bin`,
-        `${homeDir}/.cargo/bin`,
-        `${homeDir}/.cherrystudio/bin`,
-        '/snap/bin'
-      )
-    }
-
-    if (isWin) {
-      newPaths.push(
-        `${process.env.APPDATA}\\npm`,
-        `${homeDir}\\AppData\\Local\\Yarn\\bin`,
-        `${homeDir}\\.cargo\\bin`,
-        `${homeDir}\\.cherrystudio\\bin`
-      )
-    }
-
-    // 只添加不存在的路径
-    newPaths.forEach((path) => {
-      if (path && !existingPaths.has(path)) {
-        existingPaths.add(path)
-      }
-    })
-
-    // 转换回字符串
-    return Array.from(existingPaths).join(pathSeparator)
-  }
+  })
 }
 
-const mcpService = new McpService()
-export default mcpService
+let mcpInstance: ReturnType<typeof McpService.getInstance> | null = null
+
+export const getMcpInstance = () => {
+  if (!mcpInstance) {
+    mcpInstance = McpService.getInstance()
+  }
+  return mcpInstance
+}
+
+export default McpService.getInstance

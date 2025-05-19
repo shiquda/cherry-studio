@@ -3,9 +3,12 @@ productName: Cherry Studio
 electronLanguages:
   - zh-CN
   - zh-TW
-  - en-GB
   - en-US
-  - ru
+  - ja # macOS/linux/win
+  - ru # macOS/linux/win
+  - zh_CN # for macOS
+  - zh_TW # for macOS
+  - en # for macOS
 directories:
   buildResources: build
 files:
@@ -41,13 +44,7 @@ win:
   artifactName: ${productName}-${version}-${arch}-setup.${ext}
   target:
     - target: nsis
-      arch:
-        - x64
-        - arm64
     - target: portable
-      arch:
-        - x64
-        - arm64
 nsis:
   artifactName: ${productName}-${version}-${arch}-setup.${ext}
   shortcutName: ${productName}
@@ -56,8 +53,10 @@ nsis:
   allowToChangeInstallationDirectory: true
   oneClick: false
   include: build/nsis-installer.nsh
+  buildUniversalInstaller: false
 portable:
   artifactName: ${productName}-${version}-${arch}-portable.${ext}
+  buildUniversalInstaller: false
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   notarize: false
@@ -69,22 +68,18 @@ mac:
     - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
   target:
     - target: dmg
-      arch:
-        - arm64
-        - x64
     - target: zip
-      arch:
-        - arm64
-        - x64
 linux:
   artifactName: ${productName}-${version}-${arch}.${ext}
   target:
     - target: AppImage
-      arch:
-        - arm64
-        - x64
   maintainer: electronjs.org
   category: Utility
+  desktop:
+    entry:
+      StartupWMClass: CherryStudio
+  mimeTypes:
+    - x-scheme-handler/cherrystudio
 publish:
   provider: generic
   url: https://releases.cherry-ai.com
@@ -92,8 +87,13 @@ electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/
 afterPack: scripts/after-pack.js
 afterSign: scripts/notarize.js
+artifactBuildCompleted: scripts/artifact-build-completed.js
 releaseInfo:
   releaseNotes: |
-    全新图标风格
-    新的智能体界面
-    WebDAV 增加文件管理功能
+    ⚠️ 注意：升级前请备份数据，否则将无法降级
+    优化软件启动速度
+    优化软件进入后台后性能问题
+    修复导出对话时自动重命名失败问题
+    防止输入法切换期间误发消息问题
+    修复群组消息重发功能问题及富文本粘贴兼容性问题
+    改进 MCP 服务处理及 IPC 注册逻辑

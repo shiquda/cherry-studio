@@ -17,12 +17,13 @@ import { reset } from '@renderer/services/BackupService'
 import { AppInfo } from '@renderer/types'
 import { formatFileSize } from '@renderer/utils'
 import { Button, Typography } from 'antd'
-import { FileText, FolderCog, FolderInput } from 'lucide-react'
+import { FileText, FolderCog, FolderInput, Sparkle } from 'lucide-react'
 import { FC, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
 
 import { SettingContainer, SettingDivider, SettingGroup, SettingRow, SettingRowTitle, SettingTitle } from '..'
+import AgentsSubscribeUrlSettings from './AgentsSubscribeUrlSettings'
 import ExportMenuOptions from './ExportMenuSettings'
 import JoplinSettings from './JoplinSettings'
 import MarkdownExportSettings from './MarkdownExportSettings'
@@ -36,6 +37,7 @@ import YuqueSettings from './YuqueSettings'
 const DataSettings: FC = () => {
   const { t } = useTranslation()
   const [appInfo, setAppInfo] = useState<AppInfo>()
+  const [cacheSize, setCacheSize] = useState<string>('')
   const { size, removeAllFiles } = useKnowledgeFiles()
   const { theme } = useTheme()
   const [menu, setMenu] = useState<string>('data')
@@ -80,6 +82,7 @@ const DataSettings: FC = () => {
       title: 'settings.data.markdown_export.title',
       icon: <FileText size={16} />
     },
+
     { key: 'divider_3', isDivider: true, text: t('settings.data.divider.third_party') },
     { key: 'notion', title: 'settings.data.notion.title', icon: <i className="iconfont icon-notion" /> },
     {
@@ -101,11 +104,17 @@ const DataSettings: FC = () => {
       key: 'siyuan',
       title: 'settings.data.siyuan.title',
       icon: <SiyuanIcon />
+    },
+    {
+      key: 'agentssubscribe_url',
+      title: 'agents.settings.title',
+      icon: <Sparkle size={16} className="icon" />
     }
   ]
 
   useEffect(() => {
     window.api.getAppInfo().then(setAppInfo)
+    window.api.getCacheSize().then(setCacheSize)
   }, [])
 
   const handleOpenPath = (path?: string) => {
@@ -130,6 +139,7 @@ const DataSettings: FC = () => {
       onOk: async () => {
         try {
           await window.api.clearCache()
+          await window.api.getCacheSize().then(setCacheSize)
           window.message.success(t('settings.data.clear_cache.success'))
         } catch (error) {
           window.message.error(t('settings.data.clear_cache.error'))
@@ -204,18 +214,18 @@ const DataSettings: FC = () => {
               <SettingDivider />
               <SettingRow>
                 <SettingRowTitle>{t('settings.data.app_data')}</SettingRowTitle>
-                <HStack alignItems="center" gap="5px">
-                  <Typography.Text style={{ color: 'var(--color-text-3)' }}>{appInfo?.appDataPath}</Typography.Text>
-                  <StyledIcon onClick={() => handleOpenPath(appInfo?.appDataPath)} />
-                </HStack>
+                <PathRow>
+                  <PathText style={{ color: 'var(--color-text-3)' }}>{appInfo?.appDataPath}</PathText>
+                  <StyledIcon onClick={() => handleOpenPath(appInfo?.appDataPath)} style={{ flexShrink: 0 }} />
+                </PathRow>
               </SettingRow>
               <SettingDivider />
               <SettingRow>
                 <SettingRowTitle>{t('settings.data.app_logs')}</SettingRowTitle>
-                <HStack alignItems="center" gap="5px">
-                  <Typography.Text style={{ color: 'var(--color-text-3)' }}>{appInfo?.logsPath}</Typography.Text>
-                  <StyledIcon onClick={() => handleOpenPath(appInfo?.logsPath)} />
-                </HStack>
+                <PathRow>
+                  <PathText style={{ color: 'var(--color-text-3)' }}>{appInfo?.logsPath}</PathText>
+                  <StyledIcon onClick={() => handleOpenPath(appInfo?.logsPath)} style={{ flexShrink: 0 }} />
+                </PathRow>
               </SettingRow>
               <SettingDivider />
               <SettingRow>
@@ -228,7 +238,10 @@ const DataSettings: FC = () => {
               </SettingRow>
               <SettingDivider />
               <SettingRow>
-                <SettingRowTitle>{t('settings.data.clear_cache.title')}</SettingRowTitle>
+                <SettingRowTitle>
+                  {t('settings.data.clear_cache.title')}
+                  {cacheSize && <CacheText>({cacheSize}MB)</CacheText>}
+                </SettingRowTitle>
                 <HStack gap="5px">
                   <Button onClick={handleClearCache} danger>
                     {t('settings.data.clear_cache.button')}
@@ -247,6 +260,7 @@ const DataSettings: FC = () => {
         {menu === 'joplin' && <JoplinSettings />}
         {menu === 'obsidian' && <ObsidianSettings />}
         {menu === 'siyuan' && <SiyuanSettings />}
+        {menu === 'agentssubscribe_url' && <AgentsSubscribeUrlSettings />}
       </SettingContainer>
     </Container>
   )
@@ -278,6 +292,36 @@ const MenuList = styled.div`
     color: var(--color-text-2);
     line-height: 16px;
   }
+`
+
+const CacheText = styled(Typography.Text)`
+  color: var(--color-text-3);
+  font-size: 12px;
+  margin-left: 5px;
+  line-height: 16px;
+  display: inline-block;
+  vertical-align: middle;
+  text-align: left;
+`
+
+const PathText = styled(Typography.Text)`
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  vertical-align: middle;
+  text-align: right;
+  margin-left: 5px;
+`
+
+const PathRow = styled(HStack)`
+  min-width: 0;
+  flex: 1;
+  width: 0;
+  align-items: center;
+  gap: 5px;
 `
 
 export default DataSettings

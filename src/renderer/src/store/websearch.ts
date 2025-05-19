@@ -9,6 +9,7 @@ export interface SubscribeSource {
 
 export interface WebSearchState {
   // 默认搜索提供商的ID
+  /** @deprecated 支持在快捷菜单中自选搜索供应商，所以这个不再适用 */
   defaultProvider: string
   // 所有可用的搜索提供商列表
   providers: WebSearchProvider[]
@@ -20,28 +21,40 @@ export interface WebSearchState {
   excludeDomains: string[]
   // 订阅源列表
   subscribeSources: SubscribeSource[]
-  // 是否启用搜索增强模式
-  enhanceMode: boolean
   // 是否覆盖服务商搜索
+  /** @deprecated 支持在快捷菜单中自选搜索供应商，所以这个不再适用 */
   overwrite: boolean
+  contentLimit?: number
+  // 具体供应商的配置
+  providerConfig: Record<string, any>
 }
 
 const initialState: WebSearchState = {
-  defaultProvider: '',
+  defaultProvider: 'local-bing',
   providers: [
     {
       id: 'tavily',
       name: 'Tavily',
+      apiHost: 'https://api.tavily.com',
       apiKey: ''
     },
     {
       id: 'searxng',
       name: 'Searxng',
-      apiHost: ''
+      apiHost: '',
+      basicAuthUsername: '',
+      basicAuthPassword: ''
     },
     {
       id: 'exa',
       name: 'Exa',
+      apiHost: 'https://api.exa.ai',
+      apiKey: ''
+    },
+    {
+      id: 'bocha',
+      name: 'Bocha',
+      apiHost: 'https://api.bochaai.com',
       apiKey: ''
     },
     {
@@ -64,8 +77,8 @@ const initialState: WebSearchState = {
   maxResults: 5,
   excludeDomains: [],
   subscribeSources: [],
-  enhanceMode: true,
-  overwrite: false
+  overwrite: false,
+  providerConfig: {}
 }
 
 export const defaultWebSearchProviders = initialState.providers
@@ -125,9 +138,6 @@ const websearchSlice = createSlice({
     setSubscribeSources: (state, action: PayloadAction<SubscribeSource[]>) => {
       state.subscribeSources = action.payload
     },
-    setEnhanceMode: (state, action: PayloadAction<boolean>) => {
-      state.enhanceMode = action.payload
-    },
     setOverwrite: (state, action: PayloadAction<boolean>) => {
       state.overwrite = action.payload
     },
@@ -139,6 +149,15 @@ const websearchSlice = createSlice({
         // Add the new provider to the array
         state.providers.push(action.payload)
       }
+    },
+    setContentLimit: (state, action: PayloadAction<number | undefined>) => {
+      state.contentLimit = action.payload
+    },
+    setProviderConfig: (state, action: PayloadAction<Record<string, any>>) => {
+      state.providerConfig = action.payload
+    },
+    updateProviderConfig: (state, action: PayloadAction<Record<string, any>>) => {
+      state.providerConfig = { ...state.providerConfig, ...action.payload }
     }
   }
 })
@@ -155,9 +174,11 @@ export const {
   removeSubscribeSource,
   updateSubscribeBlacklist,
   setSubscribeSources,
-  setEnhanceMode,
   setOverwrite,
-  addWebSearchProvider
+  addWebSearchProvider,
+  setContentLimit,
+  setProviderConfig,
+  updateProviderConfig
 } = websearchSlice.actions
 
 export default websearchSlice.reducer

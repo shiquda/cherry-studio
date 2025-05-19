@@ -98,12 +98,13 @@ export function WebdavBackupManager({ visible, onClose, webdavConfig, restoreMet
       return
     }
 
-    Modal.confirm({
+    window.modal.confirm({
       title: t('settings.data.webdav.backup.manager.delete.confirm.title'),
       icon: <ExclamationCircleOutlined />,
       content: t('settings.data.webdav.backup.manager.delete.confirm.multiple', { count: selectedRowKeys.length }),
       okText: t('common.confirm'),
       cancelText: t('common.cancel'),
+      centered: true,
       onOk: async () => {
         setDeleting(true)
         try {
@@ -136,12 +137,13 @@ export function WebdavBackupManager({ visible, onClose, webdavConfig, restoreMet
       return
     }
 
-    Modal.confirm({
+    window.modal.confirm({
       title: t('settings.data.webdav.backup.manager.delete.confirm.title'),
       icon: <ExclamationCircleOutlined />,
       content: t('settings.data.webdav.backup.manager.delete.confirm.single', { fileName }),
       okText: t('common.confirm'),
       cancelText: t('common.cancel'),
+      centered: true,
       onOk: async () => {
         setDeleting(true)
         try {
@@ -168,12 +170,13 @@ export function WebdavBackupManager({ visible, onClose, webdavConfig, restoreMet
       return
     }
 
-    Modal.confirm({
+    window.modal.confirm({
       title: t('settings.data.webdav.restore.confirm.title'),
       icon: <ExclamationCircleOutlined />,
       content: t('settings.data.webdav.restore.confirm.content'),
       okText: t('common.confirm'),
       cancelText: t('common.cancel'),
+      centered: true,
       onOk: async () => {
         setRestoring(true)
         try {
@@ -251,6 +254,8 @@ export function WebdavBackupManager({ visible, onClose, webdavConfig, restoreMet
       open={visible}
       onCancel={onClose}
       width={800}
+      centered
+      transitionName="animation-move-down"
       footer={[
         <Button key="refresh" icon={<ReloadOutlined />} onClick={fetchBackupFiles} disabled={loading}>
           {t('settings.data.webdav.backup.manager.refresh')}

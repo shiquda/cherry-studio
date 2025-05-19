@@ -1,16 +1,9 @@
-import './utils/analytics'
-
 import KeyvStorage from '@kangfenmao/keyv-storage'
 
 import { startAutoSync } from './services/BackupService'
+import { startNutstoreAutoSync } from './services/NutstoreService'
+import storeSyncService from './services/StoreSyncService'
 import store from './store'
-
-function initSpinner() {
-  const spinner = document.getElementById('spinner')
-  if (spinner && window.location.hash !== '#/mini') {
-    spinner.style.display = 'flex'
-  }
-}
 
 function initKeyv() {
   window.keyv = new KeyvStorage()
@@ -20,12 +13,20 @@ function initKeyv() {
 function initAutoSync() {
   setTimeout(() => {
     const { webdavAutoSync } = store.getState().settings
+    const { nutstoreAutoSync } = store.getState().nutstore
     if (webdavAutoSync) {
       startAutoSync()
     }
-  }, 2000)
+    if (nutstoreAutoSync) {
+      startNutstoreAutoSync()
+    }
+  }, 8000)
 }
 
-initSpinner()
+function initStoreSync() {
+  storeSyncService.subscribe()
+}
+
 initKeyv()
 initAutoSync()
+initStoreSync()
