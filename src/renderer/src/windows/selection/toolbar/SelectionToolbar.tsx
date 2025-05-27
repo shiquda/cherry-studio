@@ -66,7 +66,10 @@ const ActionIcons: FC<{
   const renderActionButton = useCallback(
     (action: ActionItem) => {
       return (
-        <ActionButton key={action.id} onClick={() => handleAction(action)}>
+        <ActionButton
+          key={action.id}
+          onClick={() => handleAction(action)}
+          title={isCompact ? t(action.name) : undefined}>
           <ActionIcon>
             {action.id === 'copy' ? (
               renderCopyIcon()
