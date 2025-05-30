@@ -1,7 +1,7 @@
 import type { WebSearchResultBlock } from '@anthropic-ai/sdk/resources'
-import type { GroundingMetadata } from '@google/genai'
+import type { GenerateImagesConfig, GroundingMetadata } from '@google/genai'
 import type OpenAI from 'openai'
-import React from 'react'
+import type { CSSProperties } from 'react'
 
 import type { Message } from './newMessage'
 
@@ -25,7 +25,10 @@ export type Assistant = {
   mcpServers?: MCPServer[]
   knowledgeRecognition?: 'off' | 'on'
   regularPhrases?: QuickPhrase[] // Added for regular phrase
+  tags?: string[] // 助手标签
 }
+
+export type AssistantsSortType = 'tags' | 'list'
 
 export type AssistantMessage = {
   role: 'user' | 'assistant'
@@ -192,6 +195,8 @@ export type PaintingParams = {
   files: FileType[]
 }
 
+export type PaintingProvider = 'aihubmix' | 'silicon' | 'dmxapi'
+
 export interface Painting extends PaintingParams {
   model?: string
   prompt?: string
@@ -214,6 +219,13 @@ export interface GeneratePainting extends PaintingParams {
   negativePrompt?: string
   magicPromptOption?: boolean
   renderingSpeed?: string
+  quality?: string
+  moderation?: string
+  n?: number
+  size?: string
+  background?: string
+  personGeneration?: GenerateImagesConfig['personGeneration']
+  numberOfImages?: number
 }
 
 export interface EditPainting extends PaintingParams {
@@ -253,6 +265,17 @@ export interface ScalePainting extends PaintingParams {
   renderingSpeed?: string
 }
 
+export interface DmxapiPainting extends PaintingParams {
+  model?: string
+  prompt?: string
+  n?: number
+  aspect_ratio?: string
+  image_size?: string
+  seed?: string
+  style_type?: string
+  autoCreate?: boolean
+}
+
 export type PaintingAction = Partial<GeneratePainting & RemixPainting & EditPainting & ScalePainting> & PaintingParams
 
 export interface PaintingsState {
@@ -261,6 +284,7 @@ export interface PaintingsState {
   remix: Partial<RemixPainting> & PaintingParams[]
   edit: Partial<EditPainting> & PaintingParams[]
   upscale: Partial<ScalePainting> & PaintingParams[]
+  DMXAPIPaintings: DmxapiPainting[]
 }
 
 export type MinAppType = {
@@ -270,7 +294,7 @@ export type MinAppType = {
   url: string
   bodered?: boolean
   background?: string
-  style?: React.CSSProperties
+  style?: CSSProperties
   addTime?: string
   type?: 'Custom' | 'Default' // Added the 'type' property
 }
@@ -389,7 +413,7 @@ export interface KnowledgeBase {
 export type KnowledgeBaseParams = {
   id: string
   model: string
-  dimensions: number
+  dimensions?: number
   apiKey: string
   apiVersion?: string
   baseURL: string
@@ -480,7 +504,8 @@ export enum WebSearchSource {
   PERPLEXITY = 'perplexity',
   QWEN = 'qwen',
   HUNYUAN = 'hunyuan',
-  ZHIPU = 'zhipu'
+  ZHIPU = 'zhipu',
+  GROK = 'grok'
 }
 
 export type WebSearchResponse = {
