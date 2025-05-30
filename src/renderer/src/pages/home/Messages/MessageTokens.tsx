@@ -70,19 +70,19 @@ const MessgeTokens: React.FC<MessageTokensProps> = ({ message }) => {
         <span>{message?.usage?.total_tokens}</span>
         <span>↑{message?.usage?.prompt_tokens}</span>
         <span>↓{message?.usage?.completion_tokens}</span>
+        <span>{getPriceString()}</span>
       </span>
     )
 
     return (
-      <MessageMetadata className={`message-tokens ${hasMetrics ? 'has-metrics' : ''}`} onClick={locateMessage}>
-        <span className="metrics">{metrixs}</span>
-        <span className="tokens">
-          Tokens:
-          <span>{message?.usage?.total_tokens}</span>
-          <span>↑{message?.usage?.prompt_tokens}</span>
-          <span>↓{message?.usage?.completion_tokens}</span>
-          <span>{getPriceString()}</span>
-        </span>
+      <MessageMetadata className="message-tokens" onClick={locateMessage}>
+        {hasMetrics ? (
+          <Popover content={metrixs} placement="top" trigger="hover" styles={{ root: { fontSize: 11 } }}>
+            {tokensInfo}
+          </Popover>
+        ) : (
+          tokensInfo
+        )}
       </MessageMetadata>
     )
   }

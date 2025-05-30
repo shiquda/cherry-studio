@@ -149,7 +149,7 @@ const ModelEditContent: FC<ModelEditContentProps> = ({ model, onUpdateModel, ope
         {showMoreSettings && (
           <div>
             <Divider style={{ margin: '0 0 15px 0' }} />
-            <TypeTitle>{t('models.type.select')}:</TypeTitle>
+            <TypeTitle>{t('models.type.select')}</TypeTitle>
             {(() => {
               const defaultTypes = [
                 ...(isVisionModel(model) ? ['vision'] : []),
@@ -281,6 +281,7 @@ const ModelEditContent: FC<ModelEditContentProps> = ({ model, onUpdateModel, ope
 }
 
 const TypeTitle = styled.div`
+  margin-top: 16px;
   margin-bottom: 12px;
   font-size: 14px;
   font-weight: 600;
