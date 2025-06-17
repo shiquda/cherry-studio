@@ -1,13 +1,7 @@
 import { CheckOutlined } from '@ant-design/icons'
 import { HStack } from '@renderer/components/Layout'
 import Scrollbar from '@renderer/components/Scrollbar'
-import {
-  DEFAULT_CONTEXTCOUNT,
-  DEFAULT_MAX_TOKENS,
-  DEFAULT_TEMPERATURE,
-  isMac,
-  isWindows
-} from '@renderer/config/constant'
+import { DEFAULT_CONTEXTCOUNT, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE } from '@renderer/config/constant'
 import {
   isOpenAIModel,
   isSupportedFlexServiceTier,
@@ -46,6 +40,7 @@ import {
   setShowInputEstimatedTokens,
   setShowMessageDivider,
   setShowPrompt,
+  setShowTokens,
   setShowTranslateConfirm,
   setThoughtAutoCollapse
 } from '@renderer/store/settings'
@@ -58,8 +53,9 @@ import {
   TranslateLanguageVarious
 } from '@renderer/types'
 import { modalConfirm } from '@renderer/utils'
+import { getSendMessageShortcutLabel } from '@renderer/utils/input'
 import { Button, Col, InputNumber, Row, Select, Slider, Switch, Tooltip } from 'antd'
-import { CircleHelp, RotateCcw, Settings2 } from 'lucide-react'
+import { CircleHelp, Settings2 } from 'lucide-react'
 import { FC, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import styled from 'styled-components'
@@ -71,7 +67,7 @@ interface Props {
 }
 
 const SettingsTab: FC<Props> = (props) => {
-  const { assistant, updateAssistantSettings, updateAssistant } = useAssistant(props.assistant.id)
+  const { assistant, updateAssistantSettings } = useAssistant(props.assistant.id)
   const { provider } = useProvider(assistant.model.provider)
 
   const { messageStyle, fontSize, language } = useSettings()
@@ -113,7 +109,8 @@ const SettingsTab: FC<Props> = (props) => {
     messageNavigation,
     enableQuickPanelTriggers,
     enableBackspaceDeleteModel,
-    showTranslateConfirm
+    showTranslateConfirm,
+    showTokens
   } = useSettings()
 
   const onUpdateAssistantSettings = (settings: Partial<AssistantSettings>) => {
@@ -136,24 +133,6 @@ const SettingsTab: FC<Props> = (props) => {
     if (!isNaN(value as number)) {
       onUpdateAssistantSettings({ maxTokens: value })
     }
-  }
-
-  const onReset = () => {
-    setTemperature(DEFAULT_TEMPERATURE)
-    setContextCount(DEFAULT_CONTEXTCOUNT)
-    updateAssistant({
-      ...assistant,
-      settings: {
-        ...assistant.settings,
-        temperature: DEFAULT_TEMPERATURE,
-        contextCount: DEFAULT_CONTEXTCOUNT,
-        enableMaxTokens: false,
-        maxTokens: DEFAULT_MAX_TOKENS,
-        streamOutput: true,
-        hideMessages: false,
-        customParameters: []
-      }
-    })
   }
 
   const codeStyle = useMemo(() => {
@@ -209,14 +188,6 @@ const SettingsTab: FC<Props> = (props) => {
         defaultExpanded={true}
         extra={
           <HStack alignItems="center" gap={2}>
-            <Tooltip title={t('chat.settings.reset')}>
-              <Button
-                type="text"
-                size="small"
-                onClick={onReset}
-                icon={<RotateCcw size={20} style={{ cursor: 'pointer', padding: '0 3px', opacity: 0.8 }} />}
-              />
-            </Tooltip>
             <Button
               type="text"
               size="small"
@@ -337,7 +308,17 @@ const SettingsTab: FC<Props> = (props) => {
           </SettingRow>
           <SettingDivider />
           <SettingRow>
-            <SettingRowTitleSmall>{t('settings.messages.divider')}</SettingRowTitleSmall>
+            <SettingRowTitleSmall>{t('settings.messages.tokens')}</SettingRowTitleSmall>
+            <Switch size="small" checked={showTokens} onChange={(checked) => dispatch(setShowTokens(checked))} />
+          </SettingRow>
+          <SettingDivider />
+          <SettingRow>
+            <SettingRowTitleSmall>
+              {t('settings.messages.divider')}
+              <Tooltip title={t('settings.messages.divider.tooltip')}>
+                <CircleHelp size={14} style={{ marginLeft: 4 }} color="var(--color-text-2)" />
+              </Tooltip>
+            </SettingRowTitleSmall>
             <Switch
               size="small"
               checked={showMessageDivider}
@@ -684,10 +665,11 @@ const SettingsTab: FC<Props> = (props) => {
               value={sendMessageShortcut}
               menuItemSelectedIcon={<CheckOutlined />}
               options={[
-                { value: 'Enter', label: 'Enter' },
-                { value: 'Shift+Enter', label: 'Shift + Enter' },
-                { value: 'Ctrl+Enter', label: 'Ctrl + Enter' },
-                { value: 'Command+Enter', label: `${isMac ? '⌘' : isWindows ? 'Win' : 'Super'} + Enter` }
+                { value: 'Enter', label: getSendMessageShortcutLabel('Enter') },
+                { value: 'Ctrl+Enter', label: getSendMessageShortcutLabel('Ctrl+Enter') },
+                { value: 'Alt+Enter', label: getSendMessageShortcutLabel('Alt+Enter') },
+                { value: 'Command+Enter', label: getSendMessageShortcutLabel('Command+Enter') },
+                { value: 'Shift+Enter', label: getSendMessageShortcutLabel('Shift+Enter') }
               ]}
               onChange={(value) => setSendMessageShortcut(value as SendMessageShortcut)}
               style={{ width: 135 }}
@@ -707,6 +689,7 @@ const Container = styled(Scrollbar)`
   padding-right: 0;
   padding-top: 2px;
   padding-bottom: 10px;
+  margin-top: 3px;
 `
 
 const SettingRowTitleSmall = styled(SettingRowTitle)`

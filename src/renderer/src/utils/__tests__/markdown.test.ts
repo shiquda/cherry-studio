@@ -5,9 +5,9 @@ import { describe, expect, it } from 'vitest'
 
 import {
   convertMathFormula,
-  encodeHTML,
   findCitationInChildren,
   getCodeBlockId,
+  markdownToPlainText,
   removeTrailingDoubleSpaces,
   updateCodeBlock
 } from '../markdown'
@@ -143,41 +143,6 @@ describe('markdown', () => {
     })
   })
 
-  describe('encodeHTML', () => {
-    it('should encode all special HTML characters', () => {
-      const input = `Tom & Jerry's "cat" <dog>`
-      const result = encodeHTML(input)
-      expect(result).toBe('Tom &amp; Jerry&apos;s &quot;cat&quot; &lt;dog&gt;')
-    })
-
-    it('should return the same string if no special characters', () => {
-      const input = 'Hello World!'
-      const result = encodeHTML(input)
-      expect(result).toBe('Hello World!')
-    })
-
-    it('should return empty string if input is empty', () => {
-      const input = ''
-      const result = encodeHTML(input)
-      expect(result).toBe('')
-    })
-
-    it('should encode single special character', () => {
-      expect(encodeHTML('&')).toBe('&amp;')
-      expect(encodeHTML('<')).toBe('&lt;')
-      expect(encodeHTML('>')).toBe('&gt;')
-      expect(encodeHTML('"')).toBe('&quot;')
-      expect(encodeHTML("'")).toBe('&apos;')
-    })
-
-    it('should throw if input is not a string', () => {
-      // @ts-expect-error purposely pass wrong type to test error branch
-      expect(() => encodeHTML(null)).toThrow()
-      // @ts-expect-error purposely pass wrong type to test error branch
-      expect(() => encodeHTML(undefined)).toThrow()
-    })
-  })
-
   describe('getCodeBlockId', () => {
     it('should generate ID from position information', () => {
       // 从位置信息生成ID
@@ -220,7 +185,7 @@ describe('markdown', () => {
     // function getAllCodeBlockIds(markdown: string): { [content: string]: string } {
     //   const result: { [content: string]: string } = {}
     //   const tree = unified().use(remarkParse).parse(markdown)
-
+    //
     //   visit(tree, 'code', (node) => {
     //     const id = getCodeBlockId(node.position?.start)
     //     if (id) {
@@ -228,7 +193,7 @@ describe('markdown', () => {
     //       console.log(`Code Block ID: "${id}" for content: "${node.value}" lang: "${node.lang}"`)
     //     }
     //   })
-
+    //
     //   return result
     // }
 
@@ -357,6 +322,81 @@ describe('markdown', () => {
       const result = updateCodeBlock(markdown, blockId, newContent)
 
       expect(result).toBe(expectedResult)
+    })
+  })
+
+  describe('markdownToPlainText', () => {
+    it('should return an empty string if input is null or empty', () => {
+      expect(markdownToPlainText(null as any)).toBe('')
+      expect(markdownToPlainText('')).toBe('')
+    })
+
+    it('should remove headers', () => {
+      expect(markdownToPlainText('# Header 1')).toBe('Header 1')
+      expect(markdownToPlainText('## Header 2')).toBe('Header 2')
+      expect(markdownToPlainText('### Header 3')).toBe('Header 3')
+    })
+
+    it('should remove bold and italic', () => {
+      expect(markdownToPlainText('**bold**')).toBe('bold')
+      expect(markdownToPlainText('*italic*')).toBe('italic')
+      expect(markdownToPlainText('***bolditalic***')).toBe('bolditalic')
+      expect(markdownToPlainText('__bold__')).toBe('bold')
+      expect(markdownToPlainText('_italic_')).toBe('italic')
+      expect(markdownToPlainText('___bolditalic___')).toBe('bolditalic')
+    })
+
+    it('should remove strikethrough', () => {
+      expect(markdownToPlainText('~~strikethrough~~')).toBe('strikethrough')
+    })
+
+    it('should remove links, keeping the text', () => {
+      expect(markdownToPlainText('[link text](http://example.com)')).toBe('link text')
+      expect(markdownToPlainText('[link text with title](http://example.com "title")')).toBe('link text with title')
+    })
+
+    it('should remove images, keeping the alt text', () => {
+      expect(markdownToPlainText('![alt text](http://example.com/image.png)')).toBe('alt text')
+    })
+
+    it('should remove inline code', () => {
+      expect(markdownToPlainText('`inline code`')).toBe('inline code')
+    })
+
+    it('should remove code blocks', () => {
+      const codeBlock = '```javascript\nconst x = 1;\n```'
+      expect(markdownToPlainText(codeBlock)).toBe('const x = 1;') // remove-markdown keeps code content
+    })
+
+    it('should remove blockquotes', () => {
+      expect(markdownToPlainText('> blockquote')).toBe('blockquote')
+    })
+
+    it('should remove unordered lists', () => {
+      const list = '* item 1\n* item 2'
+      expect(markdownToPlainText(list).replace(/\n+/g, ' ')).toBe('item 1 item 2')
+    })
+
+    it('should remove ordered lists', () => {
+      const list = '1. item 1\n2. item 2'
+      expect(markdownToPlainText(list).replace(/\n+/g, ' ')).toBe('item 1 item 2')
+    })
+
+    it('should remove horizontal rules', () => {
+      expect(markdownToPlainText('---')).toBe('')
+      expect(markdownToPlainText('***')).toBe('')
+      expect(markdownToPlainText('___')).toBe('')
+    })
+
+    it('should handle a mix of markdown elements', () => {
+      const mixed = '# Title\nSome **bold** and *italic* text.\n[link](url)\n`code`\n> quote\n* list item'
+      const expected = 'Title\nSome bold and italic text.\nlink\ncode\nquote\nlist item'
+      const normalize = (str: string) => str.replace(/\s+/g, ' ').trim()
+      expect(normalize(markdownToPlainText(mixed))).toBe(normalize(expected))
+    })
+
+    it('should keep plain text unchanged', () => {
+      expect(markdownToPlainText('This is plain text.')).toBe('This is plain text.')
     })
   })
 })

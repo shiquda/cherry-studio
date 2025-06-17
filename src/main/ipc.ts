@@ -4,13 +4,13 @@ import { arch } from 'node:os'
 import { isMac, isWin } from '@main/constant'
 import { getBinaryPath, isBinaryExists, runInstallScript } from '@main/utils/process'
 import { handleZoomFactor } from '@main/utils/zoom'
+import { FeedUrl } from '@shared/config/constant'
 import { IpcChannel } from '@shared/IpcChannel'
 import { Shortcut, ThemeMode } from '@types'
-import { BrowserWindow, ipcMain, nativeTheme, session, shell } from 'electron'
+import { BrowserWindow, ipcMain, session, shell } from 'electron'
 import log from 'electron-log'
 import { Notification } from 'src/renderer/src/types/notification'
 
-import { titleBarOverlayDark, titleBarOverlayLight } from './config'
 import AppUpdater from './services/AppUpdater'
 import BackupManager from './services/BackupManager'
 import { configManager } from './services/ConfigManager'
@@ -28,6 +28,8 @@ import { searchService } from './services/SearchService'
 import { SelectionService } from './services/SelectionService'
 import { registerShortcuts, unregisterAllShortcuts } from './services/ShortcutService'
 import storeSyncService from './services/StoreSyncService'
+import { themeService } from './services/ThemeService'
+import VertexAIService from './services/VertexAIService'
 import { setOpenLinkExternal } from './services/WebviewService'
 import { windowService } from './services/WindowService'
 import { calculateDirectorySize, getResourcePath } from './utils'
@@ -39,6 +41,7 @@ const fileManager = new FileStorage()
 const backupManager = new BackupManager()
 const exportService = new ExportService(fileManager)
 const obsidianVaultService = new ObsidianVaultService()
+const vertexAIService = VertexAIService.getInstance()
 
 export function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
   const appUpdater = new AppUpdater(mainWindow)
@@ -112,6 +115,10 @@ export function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
     configManager.setAutoUpdate(isActive)
   })
 
+  ipcMain.handle(IpcChannel.App_SetFeedUrl, (_, feedUrl: FeedUrl) => {
+    appUpdater.setFeedUrl(feedUrl)
+  })
+
   ipcMain.handle(IpcChannel.Config_Set, (_, key: string, value: any, isNotify: boolean = false) => {
     configManager.set(key, value, isNotify)
   })
@@ -122,34 +129,7 @@ export function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
 
   // theme
   ipcMain.handle(IpcChannel.App_SetTheme, (_, theme: ThemeMode) => {
-    const updateTitleBarOverlay = () => {
-      if (!mainWindow?.setTitleBarOverlay) return
-      const isDark = nativeTheme.shouldUseDarkColors
-      mainWindow.setTitleBarOverlay(isDark ? titleBarOverlayDark : titleBarOverlayLight)
-    }
-
-    const broadcastThemeChange = () => {
-      const isDark = nativeTheme.shouldUseDarkColors
-      const effectiveTheme = isDark ? ThemeMode.dark : ThemeMode.light
-      BrowserWindow.getAllWindows().forEach((win) => win.webContents.send(IpcChannel.ThemeChange, effectiveTheme))
-    }
-
-    const notifyThemeChange = () => {
-      updateTitleBarOverlay()
-      broadcastThemeChange()
-    }
-
-    if (theme === ThemeMode.auto) {
-      nativeTheme.themeSource = 'system'
-      nativeTheme.on('updated', notifyThemeChange)
-    } else {
-      nativeTheme.themeSource = theme
-      nativeTheme.off('updated', notifyThemeChange)
-    }
-
-    updateTitleBarOverlay()
-    configManager.setTheme(theme)
-    notifyThemeChange()
+    themeService.setTheme(theme)
   })
 
   ipcMain.handle(IpcChannel.App_HandleZoomFactor, (_, delta: number, reset: boolean = false) => {
@@ -248,6 +228,7 @@ export function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
   ipcMain.handle(IpcChannel.File_Base64Image, fileManager.base64Image)
   ipcMain.handle(IpcChannel.File_SaveBase64Image, fileManager.saveBase64Image)
   ipcMain.handle(IpcChannel.File_Base64File, fileManager.base64File)
+  ipcMain.handle(IpcChannel.File_GetPdfInfo, fileManager.pdfPageCount)
   ipcMain.handle(IpcChannel.File_Download, fileManager.downloadFile)
   ipcMain.handle(IpcChannel.File_Copy, fileManager.copyFile)
   ipcMain.handle(IpcChannel.File_BinaryImage, fileManager.binaryImage)
@@ -293,6 +274,15 @@ export function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
     if (width < 1080) {
       mainWindow?.setSize(1080, height)
     }
+  })
+
+  // VertexAI
+  ipcMain.handle(IpcChannel.VertexAI_GetAuthHeaders, async (_, params) => {
+    return vertexAIService.getAuthHeaders(params)
+  })
+
+  ipcMain.handle(IpcChannel.VertexAI_ClearAuthCache, async (_, projectId: string, clientEmail?: string) => {
+    vertexAIService.clearAuthCache(projectId, clientEmail)
   })
 
   // mini window
@@ -373,4 +363,6 @@ export function registerIpc(mainWindow: BrowserWindow, app: Electron.App) {
 
   // selection assistant
   SelectionService.registerIpcHandler()
+
+  ipcMain.handle(IpcChannel.App_QuoteToMain, (_, text: string) => windowService.quoteToMainWindow(text))
 }
